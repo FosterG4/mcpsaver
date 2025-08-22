@@ -132,7 +132,7 @@ export class DiffManager {
    * Apply diff to recreate content
    */
   applyDiff(originalContent: string, changes: DiffChange[]): string {
-    let result = originalContent;
+    const result = originalContent;
     const lines = result.split('\n');
     
     // Sort changes by line number in descending order to avoid index shifting
@@ -247,7 +247,7 @@ export class DiffManager {
     const lcs = this.longestCommonSubsequence(oldLines, newLines);
     const diffResult = this.generateDiffFromLCS(oldLines, newLines, lcs);
     
-    let lineNumber = 0;
+    let _lineNumber = 0;
     for (const item of diffResult) {
       switch (item.type) {
         case 'added':
@@ -255,7 +255,7 @@ export class DiffManager {
             type: 'added',
             content: item.content,
           });
-          lineNumber++;
+          _lineNumber++;
           break;
         case 'removed':
           changes.push({
@@ -268,10 +268,10 @@ export class DiffManager {
             type: 'modified',
             content: item.content,
           });
-          lineNumber++;
+          _lineNumber++;
           break;
         case 'unchanged':
-          lineNumber++;
+          _lineNumber++;
           break;
       }
     }
@@ -352,7 +352,7 @@ export class DiffManager {
     let addedLines = 0;
     let removedLines = 0;
     let modifiedLines = 0;
-    let contextLines = 0;
+    const contextLines = 0;
     
     for (const change of changes) {
       switch (change.type) {

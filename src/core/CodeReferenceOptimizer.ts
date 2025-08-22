@@ -180,7 +180,7 @@ export class CodeReferenceOptimizer {
 
     // Truncate code while preserving structure
     const lines = context.extractedCode.split('\n');
-    let truncatedLines: string[] = [];
+    const truncatedLines: string[] = [];
     let currentTokens = this.estimateTokenCount(context.imports.join('\n'));
     
     for (const line of lines) {
