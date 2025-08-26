@@ -58,3 +58,6 @@ SETUP.md
 pnpm-lock.yaml
 yarn.lock
 package-lock.json
+
+.trae/
+.trae/rules/

@@ -15,9 +15,9 @@ Example envelope:
 ## Tools
 
 ### 1) extract_code_context
-Extract minimal code context from a file.
+Extract minimal, focused code context from source files using AST parsing. Intelligently identifies and extracts only the relevant code sections, imports, and dependencies needed for understanding specific symbols or functions. Optimizes token usage by filtering out unnecessary code while maintaining semantic completeness.
 
-Input schema (from `src/index.ts`):
+Input schema:
 ```json
 {
   "filePath": "string",
@@ -26,8 +26,10 @@ Input schema (from `src/index.ts`):
   "maxTokens": 1000
 }
 ```
-- Required: `filePath`
-- Optional: `targetSymbols`, `includeImports` (default true), `maxTokens` (default 1000)
+- **filePath** (required): Absolute or relative path to the source file to analyze. Supports TypeScript, JavaScript, Python, Go, and other languages with tree-sitter parsers.
+- **targetSymbols** (optional): Array of specific symbol names (functions, classes, variables, types) to extract context for. If empty or omitted, extracts context for the entire file.
+- **includeImports** (optional, default true): Whether to include import statements and dependencies relevant to the extracted symbols. Recommended for understanding symbol usage.
+- **maxTokens** (optional, default 1000): Maximum number of tokens to include in the response. Higher values provide more context but consume more resources. Range: 100-5000.
 
 Example request (MCP):
 ```json
@@ -46,15 +48,17 @@ Example request (MCP):
 ```
 
 ### 2) get_cached_context
-Return cached context for a file.
+Retrieve previously extracted and cached code context for a file. Provides fast access to analyzed code structures without re-parsing. Useful for repeated queries on the same file or when working with large codebases where re-analysis would be expensive.
 
 Input schema:
 ```json
 { "filePath": "string", "cacheKey": "string (optional)" }
 ```
+- **filePath** (required): Path to the source file for which to retrieve cached context. Must match the path used in previous extract_code_context calls.
+- **cacheKey** (optional): Optional specific cache key to retrieve a particular cached analysis. If omitted, returns the most recent cached context for the file.
 
 ### 3) analyze_code_diff
-Analyze differences between two versions and provide minimal updates.
+Perform intelligent analysis of code differences between two versions of a file. Identifies semantic changes, structural modifications, and provides minimal update suggestions. Helps understand the impact of changes and suggests optimizations for code evolution.
 
 Input schema:
 ```json
@@ -64,35 +68,37 @@ Input schema:
   "newContent": "string"
 }
 ```
-- Required: all three fields
+- **filePath** (required): Path to the source file being analyzed. Used for context and language detection.
+- **oldContent** (required): Complete content of the previous version of the file. Should be the full file content, not just a snippet.
+- **newContent** (required): Complete content of the current version of the file. Should be the full file content, not just a snippet.
 
 ### 4) optimize_imports
-Analyze and optimize import statements.
+Analyze and optimize import statements to eliminate redundancy and improve code efficiency. Identifies unused imports, suggests consolidation opportunities, and ensures only necessary dependencies are included. Helps reduce bundle size and improve compilation performance.
 
 Input schema:
 ```json
 { "filePath": "string", "usedSymbols": ["string"] }
 ```
-- Required: `filePath`
-- Optional: `usedSymbols`
+- **filePath** (required): Path to the source file containing import statements to optimize. File must exist and be readable.
+- **usedSymbols** (optional): Array of symbol names that are actually used in the code. If provided, helps identify unused imports more accurately.
 
 ### 5) get_config
-Get current configuration or a specific section.
+Retrieve current configuration settings for the Code Reference Optimizer. Access global settings or specific configuration sections including cache behavior, extraction parameters, import analysis rules, diff analysis options, performance tuning, language-specific settings, logging configuration, and security policies.
 
 Input schema:
 ```json
 { "section": "cache|extraction|imports|diff|performance|languages|logging|security" }
 ```
-- `section` optional; if omitted, returns full config
+- **section** (optional): Specific configuration section to retrieve. Options: cache (caching behavior), extraction (code analysis settings), imports (import optimization rules), diff (difference analysis), performance (resource limits), languages (language-specific settings), logging (debug output), security (access controls). If omitted, returns full config.
 
 ### 6) update_config
-Update configuration with a partial object.
+Update configuration settings with new values. Allows fine-tuning of the optimizer behavior including cache policies, token limits, analysis depth, performance thresholds, and feature toggles. Changes are applied immediately and persist for the current session.
 
 Input schema:
 ```json
 { "config": { /* partial config */ } }
 ```
-- Required: `config`
+- **config** (required): Partial configuration object with updates to apply. Can include any combination of configuration sections. Changes are merged with existing settings, not replaced entirely.
 
 Example:
 ```json
@@ -111,12 +117,13 @@ Example:
 ```
 
 ### 7) reset_config
-Reset to default configuration.
+Reset all configuration settings to their default values. Useful for troubleshooting configuration issues or returning to optimal baseline settings. This action cannot be undone and will clear all custom configuration modifications.
 
 Input schema:
 ```json
 {}
 ```
+- No parameters required. This operation affects all configuration sections.
 
 ## Errors
 Errors are returned as MCP errors (per `@modelcontextprotocol/sdk`). When successful, tool handlers return a JSON string in `content[0].text`.

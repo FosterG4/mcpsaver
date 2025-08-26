@@ -7,11 +7,5 @@ module.exports = {
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', { useESM: true, tsconfig: 'tsconfig.jest.json' }],
   },
-  globals: {
-    'ts-jest': {
-      useESM: true,
-      tsconfig: 'tsconfig.jest.json'
-    }
-  },
   testPathIgnorePatterns: ['/node_modules/', '/dist/']
 };

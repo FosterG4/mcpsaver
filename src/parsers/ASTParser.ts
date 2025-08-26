@@ -13,34 +13,62 @@ import Haskell from 'tree-sitter-haskell-mcpsaver';
 import HTML from 'tree-sitter-html-mcpsaver';
 import Java from 'tree-sitter-java-mcpsaver';
 import Python from 'tree-sitter-python-mcpsaver';
+import Ruby from 'tree-sitter-ruby-mcpsaver';
+import PHP from 'tree-sitter-php-mcpsaver';
+import Scala from 'tree-sitter-scala-mcpsaver';
+import Julia from 'tree-sitter-julia-mcpsaver';
+import OCaml from 'tree-sitter-ocaml-mcpsaver';
+import JSON from 'tree-sitter-json-mcpsaver';
+
+import QL from 'tree-sitter-ql-mcpsaver';
+import Regex from 'tree-sitter-regex-mcpsaver';
 import Rust from 'tree-sitter-rust-mcpsaver';
 import type { ASTNode, ExtractedContext, SymbolInfo, FileLanguage } from '../types/index.js';
 
 export class ASTParser {
   private supportedLanguages: FileLanguage[] = [
+    // Core Programming Languages
     { extension: '.ts', parser: 'typescript' },
     { extension: '.tsx', parser: 'typescript' },
     { extension: '.js', parser: 'javascript' },
     { extension: '.jsx', parser: 'javascript' },
     { extension: '.mjs', parser: 'javascript' },
     { extension: '.py', parser: 'python' },
-    { extension: '.java', parser: 'java' },
-    { extension: '.cs', parser: 'csharp' },
     { extension: '.go', parser: 'go' },
     { extension: '.rs', parser: 'rust' },
-    { extension: '.sh', parser: 'bash' },
     { extension: '.c', parser: 'c' },
     { extension: '.h', parser: 'c' },
     { extension: '.cpp', parser: 'cpp' },
     { extension: '.cc', parser: 'cpp' },
     { extension: '.cxx', parser: 'cpp' },
     { extension: '.hpp', parser: 'cpp' },
-    { extension: '.css', parser: 'css' },
-    { extension: '.ejs', parser: 'embedded-template' },
-    { extension: '.eta', parser: 'embedded-template' },
+    { extension: '.java', parser: 'java' },
+    { extension: '.cs', parser: 'csharp' },
+    { extension: '.rb', parser: 'ruby' },
+    { extension: '.php', parser: 'php' },
+    { extension: '.scala', parser: 'scala' },
+    { extension: '.sc', parser: 'scala' },
+
+    { extension: '.jl', parser: 'julia' },
+    { extension: '.ml', parser: 'ocaml' },
+    { extension: '.mli', parser: 'ocaml' },
+    // Scripting & Shell
+    { extension: '.sh', parser: 'bash' },
+    { extension: '.bash', parser: 'bash' },
+    { extension: '.zsh', parser: 'bash' },
     { extension: '.hs', parser: 'haskell' },
+    // Web Technologies
     { extension: '.html', parser: 'html' },
     { extension: '.htm', parser: 'html' },
+    { extension: '.css', parser: 'css' },
+    { extension: '.ejs', parser: 'embedded_template' },
+    { extension: '.eta', parser: 'embedded_template' },
+    { extension: '.erb', parser: 'embedded_template' },
+    // Data Formats
+    { extension: '.json', parser: 'json' },
+    // Other
+    { extension: '.ql', parser: 'ql' },
+    { extension: '.regex', parser: 'regex' },
   ];
 
   /**
@@ -58,33 +86,57 @@ export class ASTParser {
     const language = this.detectLanguage(filePath);
     
     switch (language.parser) {
+      // Core Programming Languages
       case 'typescript':
       case 'javascript':
         return this.parseJavaScriptTypeScript(content, language.parser === 'typescript');
       case 'python':
         return this.parsePython(content);
-      case 'bash':
-        return this.parseWithTreeSitter(content, Bash);
-      case 'c':
-        return this.parseWithTreeSitter(content, C);
-      case 'csharp':
-        return this.parseWithTreeSitter(content, CSharp);
-      case 'cpp':
-        return this.parseWithTreeSitter(content, CPP);
-      case 'css':
-        return this.parseWithTreeSitter(content, CSS);
-      case 'embedded-template':
-        return this.parseWithTreeSitter(content, EmbeddedTemplate);
       case 'go':
         return this.parseGo(content);
-      case 'haskell':
-        return this.parseWithTreeSitter(content, Haskell);
-      case 'html':
-        return this.parseWithTreeSitter(content, HTML);
-      case 'java':
-        return this.parseWithTreeSitter(content, Java);
       case 'rust':
         return this.parseRust(content);
+      case 'c':
+        return this.parseWithTreeSitter(content, C);
+      case 'cpp':
+        return this.parseWithTreeSitter(content, CPP);
+      case 'java':
+        return this.parseWithTreeSitter(content, Java);
+      case 'csharp':
+        return this.parseWithTreeSitter(content, CSharp);
+
+      // Core Programming Languages
+      case 'ruby':
+        return this.parseWithTreeSitter(content, Ruby);
+      case 'php':
+        return this.parseWithTreeSitter(content, PHP);
+      case 'scala':
+        return this.parseWithTreeSitter(content, Scala);
+
+      case 'julia':
+        return this.parseWithTreeSitter(content, Julia);
+      case 'ocaml':
+        return this.parseWithTreeSitter(content, OCaml);
+      // Scripting & Shell
+      case 'bash':
+        return this.parseWithTreeSitter(content, Bash);
+      case 'haskell':
+        return this.parseWithTreeSitter(content, Haskell);
+      // Web Technologies
+      case 'html':
+        return this.parseWithTreeSitter(content, HTML);
+      case 'css':
+        return this.parseWithTreeSitter(content, CSS);
+      case 'embedded_template':
+        return this.parseWithTreeSitter(content, EmbeddedTemplate);
+      // Data Formats
+      case 'json':
+        return this.parseWithTreeSitter(content, JSON);
+      // Other
+      case 'ql':
+        return this.parseWithTreeSitter(content, QL);
+      case 'regex':
+        return this.parseWithTreeSitter(content, Regex);
       default:
         throw new Error(`Unsupported language: ${language.parser}`);
     }

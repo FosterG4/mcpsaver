@@ -127,7 +127,7 @@ export interface OptimizationConfig {
 
 export interface FileLanguage {
   extension: string;
-  parser: 'typescript' | 'javascript' | 'python' | 'java' | 'csharp' | 'go' | 'rust' | 'bash' | 'c' | 'cpp' | 'css' | 'embedded-template' | 'haskell' | 'html';
+  parser: 'typescript' | 'javascript' | 'python' | 'java' | 'csharp' | 'go' | 'rust' | 'bash' | 'c' | 'cpp' | 'css' | 'embedded_template' | 'haskell' | 'html' | 'ruby' | 'php' | 'scala' | 'julia' | 'ocaml' | 'json' | 'ql' | 'regex';
   astParser?: string;
 }
 

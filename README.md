@@ -4,11 +4,18 @@
 ![node version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
-An MCP (Model Context Protocol) server that extracts minimal, relevant code context, analyzes diffs, and optimizes imports to reduce token usage for AI assistants.
+An advanced MCP (Model Context Protocol) server that intelligently extracts minimal, relevant code context using AST parsing, analyzes code differences, and optimizes imports to dramatically reduce token usage for AI assistants.
 
-- Multi-language parsing (TypeScript/JavaScript, Python, Go, Rust)
-- Token-aware caching and minimal diffs
-- Simple stdio server, easy to integrate with MCP clients
+## Key Features
+
+- **Smart Context Extraction**: Uses AST parsing to identify and extract only relevant code sections
+- **Multi-language Support**: TypeScript/JavaScript, Python, Go, Rust, Java, C++, and more
+- **Intelligent Caching**: LRU cache with configurable persistence and customizable storage paths
+- **Token Optimization**: Filters unnecessary code while maintaining semantic completeness
+- **Diff Analysis**: Provides minimal, focused code differences with semantic understanding
+- **Import Optimization**: Eliminates unused imports and suggests consolidation opportunities
+- **Configurable**: Runtime configuration via tools with persistent settings
+- **Simple Integration**: stdio-based server, easy to integrate with any MCP client
 
 ## Quick Start
 
@@ -39,65 +46,79 @@ Add to your MCP client config (example `mcpServers.json`):
 }
 ```
 
-## Available Tools (exact schemas)
+## Available Tools
 
-These map 1:1 to the server in `src/index.ts`.
+The server provides 7 powerful tools for code analysis and optimization:
 
-- `extract_code_context`
-  - Input:
-    ```json
-    {
-      "filePath": "path/to/file.ts",
-      "targetSymbols": ["myFunc", "MyClass"],
-      "includeImports": true,
-      "maxTokens": 1000
-    }
-    ```
-    Required: `filePath`. Optional: `targetSymbols`, `includeImports` (default true), `maxTokens` (default 1000).
+### 🔍 `extract_code_context`
+Extracts minimal, focused code context using AST parsing. Intelligently identifies relevant code sections, imports, and dependencies for specific symbols.
 
-- `get_cached_context`
-  - Input:
-    ```json
-    { "filePath": "path/to/file.ts", "cacheKey": "optional-key" }
-    ```
-    Required: `filePath`. Optional: `cacheKey`.
+```json
+{
+  "filePath": "path/to/file.ts",
+  "targetSymbols": ["myFunc", "MyClass"],
+  "includeImports": true,
+  "maxTokens": 1000
+}
+```
+**Required**: `filePath` | **Optional**: `targetSymbols`, `includeImports`, `maxTokens`
 
-- `analyze_code_diff`
-  - Input:
-    ```json
-    {
-      "filePath": "path/to/file.ts",
-      "oldContent": "export function a() { return 1 }",
-      "newContent": "export function a() { return 2 }"
-    }
-    ```
+### 💾 `get_cached_context`
+Retrieves previously extracted and cached code context for fast access without re-parsing.
 
-- `optimize_imports`
-  - Input:
-    ```json
-    { "filePath": "path/to/file.ts", "usedSymbols": ["useEffect", "useMemo"] }
-    ```
+```json
+{ "filePath": "path/to/file.ts", "cacheKey": "optional-key" }
+```
+**Required**: `filePath` | **Optional**: `cacheKey`
 
-- `get_config`
-  - Input (optional section):
-    ```json
-    { "section": "extraction" }
-    ```
-    Allowed sections: `cache`, `extraction`, `imports`, `diff`, `performance`, `languages`, `logging`, `security`.
+### 📊 `analyze_code_diff`
+Performs intelligent analysis of code differences with semantic understanding and minimal update suggestions.
 
-- `update_config`
-  - Input:
-    ```json
-    {
-      "config": {
-        "extraction": { "maxTokens": 2000 },
-        "cache": { "maxEntries": 1000, "ttlMs": 3600000 }
-      }
-    }
-    ```
+```json
+{
+  "filePath": "path/to/file.ts",
+  "oldContent": "export function a() { return 1 }",
+  "newContent": "export function a() { return 2 }"
+}
+```
+**Required**: `filePath`, `oldContent`, `newContent`
 
-- `reset_config`
-  - No input.
+### 🧹 `optimize_imports`
+Analyzes and optimizes import statements to eliminate redundancy and improve code efficiency.
+
+```json
+{ "filePath": "path/to/file.ts", "usedSymbols": ["useEffect", "useMemo"] }
+```
+**Required**: `filePath` | **Optional**: `usedSymbols`
+
+### ⚙️ `get_config`
+Retrieves current configuration settings for cache behavior, extraction parameters, and more.
+
+```json
+{ "section": "cache" }
+```
+**Optional**: `section` (cache, extraction, imports, diff, performance, languages, logging, security)
+
+### 🔧 `update_config`
+Updates configuration settings including cache policies, token limits, and performance thresholds.
+
+```json
+{
+  "config": {
+    "cache": { "enablePersistence": true, "persistencePath": "/custom/cache/path" },
+    "extraction": { "maxTokens": 2000 }
+  }
+}
+```
+**Required**: `config`
+
+### 🔄 `reset_config`
+Resets all configuration settings to default values.
+
+```json
+{}
+```
+**No parameters required**
 
 Note: Tool results are returned as MCP content with a single `text` item containing JSON of the result, e.g.
 ```json

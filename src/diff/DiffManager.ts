@@ -132,57 +132,77 @@ export class DiffManager {
    * Apply diff to recreate content
    */
   applyDiff(originalContent: string, changes: DiffChange[]): string {
-    const result = originalContent;
-    const lines = result.split('\n');
-    
-    // Sort changes by line number in descending order to avoid index shifting
-    const sortedChanges = [...changes];
-    
-    for (const change of sortedChanges) {
-      switch (change.type) {
-        case 'added':
-          lines.push(change.content);
-          break;
-        case 'removed':
-          // Skip removed lines
-          break;
-        case 'modified':
-          // Modified lines are handled in the diff generation
-          break;
+    // Sort by oldStart ascending, undefined last
+    const sorted = [...changes].sort((a, b) => (a.oldStart ?? Number.MAX_SAFE_INTEGER) - (b.oldStart ?? Number.MAX_SAFE_INTEGER));
+    const lines = originalContent.split('\n');
+    const result: string[] = [];
+    let cursor = 1; // 1-based line cursor in original
+
+    for (const ch of sorted) {
+      const oldStart = ch.oldStart ?? cursor;
+      const oldEnd = ch.oldEnd ?? (ch.oldStart ?? cursor - 1);
+
+      // copy unchanged region before the change
+      const copyUntil = Math.max(1, oldStart - 1);
+      if (cursor <= copyUntil) {
+        result.push(...lines.slice(cursor - 1, copyUntil));
+        cursor = copyUntil + 1;
+      }
+
+      if (ch.type === 'removed') {
+        // skip removed range
+        cursor = Math.max(cursor, oldEnd + 1);
+      } else if (ch.type === 'modified') {
+        // skip old range, then insert new content
+        cursor = Math.max(cursor, oldEnd + 1);
+        if (ch.content) result.push(...ch.content.split('\n'));
+      } else if (ch.type === 'added') {
+        // insertion relative to current position
+        if (ch.content) result.push(...ch.content.split('\n'));
       }
     }
-    
-    return lines.join('\n');
+
+    // append remainder
+    if (cursor <= lines.length) {
+      result.push(...lines.slice(cursor - 1));
+    }
+
+    return result.join('\n');
   }
 
   /**
-   * Generate context-aware diff that includes surrounding lines
+   * Generate context-aware diff that includes surrounding lines around each change
    */
-  async generateContextualDiff(filePath: string, _contextLines: number = 3): Promise<DiffChange[]> {
-    const changes = await this.generateFileDiff(filePath);
-    const snapshot = this.fileSnapshots.get(filePath)!;
-    const snapshotLines = snapshot.split('\n');
-    
-    const contextualChanges: DiffChange[] = [];
-    const processedLines = new Set<number>();
-    
-    for (const _change of changes) {
-      const startLine = 0;
-      const endLine = snapshotLines.length - 1;
-      
-      for (let i = startLine; i <= endLine; i++) {
-        if (!processedLines.has(i)) {
-          processedLines.add(i);
-          
-          contextualChanges.push({
-            type: 'modified',
-            content: snapshotLines[i] || '',
-          });
-        }
+  async generateContextualDiff(filePath: string, contextLines: number = 3): Promise<DiffChange[]> {
+    const snapshot = this.fileSnapshots.get(filePath);
+    if (!snapshot) throw new Error(`No snapshot found for ${filePath}`);
+    const currentContent = await fs.readFile(filePath, 'utf-8');
+    const changes = this.computeDiff(snapshot, currentContent, filePath);
+
+    const oldLines = snapshot.split('\n');
+    const newLines = currentContent.split('\n');
+    const contextual: DiffChange[] = [];
+
+    for (const ch of changes) {
+      if (ch.type === 'added') {
+        const start = Math.max(1, (ch.newStart ?? 1) - contextLines);
+        const end = Math.min(newLines.length, (ch.newEnd ?? ch.newStart ?? 1) + contextLines);
+        const block = newLines.slice(start - 1, end).join('\n');
+        contextual.push({ type: 'added', newStart: start, newEnd: end, content: block });
+      } else if (ch.type === 'removed') {
+        const start = Math.max(1, (ch.oldStart ?? 1) - contextLines);
+        const end = Math.min(oldLines.length, (ch.oldEnd ?? ch.oldStart ?? 1) + contextLines);
+        const block = oldLines.slice(start - 1, end).join('\n');
+        contextual.push({ type: 'removed', oldStart: start, oldEnd: end, content: block });
+      } else if (ch.type === 'modified') {
+        const newStart = Math.max(1, (ch.newStart ?? 1) - contextLines);
+        const newEnd = Math.min(newLines.length, (ch.newEnd ?? ch.newStart ?? 1) + contextLines);
+        const block = newLines.slice(newStart - 1, newEnd).join('\n');
+        contextual.push({ type: 'modified', oldStart: ch.oldStart, oldEnd: ch.oldEnd, newStart, newEnd, content: block });
       }
     }
-    
-    return contextualChanges;
+
+    return contextual;
   }
 
   /**
@@ -210,7 +230,7 @@ export class DiffManager {
     try {
       const currentContent = await fs.readFile(filePath, 'utf-8');
       return currentContent !== snapshot;
-    } catch (error) {
+    } catch {
       return true; // Error reading file, assume changed
     }
   }
@@ -241,45 +261,77 @@ export class DiffManager {
   private computeDiff(oldContent: string, newContent: string, _filePath: string): DiffChange[] {
     const oldLines = oldContent.split('\n');
     const newLines = newContent.split('\n');
-    const changes: DiffChange[] = [];
-    
-    // Use Myers' algorithm for computing diffs
     const lcs = this.longestCommonSubsequence(oldLines, newLines);
-    const diffResult = this.generateDiffFromLCS(oldLines, newLines, lcs);
-    
-    let _lineNumber = 0;
-    for (const item of diffResult) {
-      switch (item.type) {
-        case 'added':
-          changes.push({
-            type: 'added',
-            content: item.content,
-          });
-          _lineNumber++;
-          break;
-        case 'removed':
-          changes.push({
-            type: 'removed',
-            content: item.content,
-          });
-          break;
-        case 'modified':
+    const ops = this.generateOpStream(oldLines, newLines, lcs);
+
+    // Merge consecutive removes followed by adds into 'modified'
+    const changes: DiffChange[] = [];
+    let i = 0;
+    while (i < ops.length) {
+      const op = ops[i]!;
+      if (op.type === 'removed') {
+        // collect removed block
+        const remStartOld = op.oldIndex + 1; // 1-based
+        let remEndOld = op.oldIndex + 1;
+        const removedLines: string[] = [op.content];
+        i++;
+        while (i < ops.length && ops[i]!.type === 'removed') {
+          removedLines.push(ops[i]!.content);
+          remEndOld = ops[i]!.oldIndex + 1;
+          i++;
+        }
+
+        // if immediately followed by one or more added lines, consider as modified
+        if (i < ops.length && ops[i]!.type === 'added') {
+          const addStartNew = ops[i]!.newIndex + 1;
+          let addEndNew = ops[i]!.newIndex + 1;
+          const addedLines: string[] = [];
+          while (i < ops.length && ops[i]!.type === 'added') {
+            addedLines.push(ops[i]!.content);
+            addEndNew = ops[i]!.newIndex + 1;
+            i++;
+          }
           changes.push({
             type: 'modified',
-            content: item.content,
+            oldStart: remStartOld,
+            oldEnd: remEndOld,
+            newStart: addStartNew,
+            newEnd: addEndNew,
+            content: addedLines.join('\n'),
           });
-          _lineNumber++;
-          break;
-        case 'unchanged':
-          _lineNumber++;
-          break;
+        } else {
+          // pure removal
+          changes.push({
+            type: 'removed',
+            oldStart: remStartOld,
+            oldEnd: remEndOld,
+            content: removedLines.join('\n'),
+          });
+        }
+      } else if (op.type === 'added') {
+        const addStartNew = op.newIndex + 1;
+        let addEndNew = op.newIndex + 1;
+        const addedLines: string[] = [op.content];
+        i++;
+        while (i < ops.length && ops[i]!.type === 'added') {
+          addedLines.push(ops[i]!.content);
+          addEndNew = ops[i]!.newIndex + 1;
+          i++;
+        }
+        changes.push({
+          type: 'added',
+          newStart: addStartNew,
+          newEnd: addEndNew,
+          content: addedLines.join('\n'),
+        });
+      } else {
+        // unchanged
+        i++;
       }
     }
-    
+
     return changes;
   }
-
-
 
   private longestCommonSubsequence(arr1: string[], arr2: string[]): number[][] {
     const m = arr1.length;
@@ -302,44 +354,30 @@ export class DiffManager {
     return dp;
   }
 
-  private generateDiffFromLCS(oldLines: string[], newLines: string[], lcs: number[][]): Array<{
-    type: 'added' | 'removed' | 'modified' | 'unchanged';
-    content: string;
-    newContent?: string;
-  }> {
-    const result: Array<{
-      type: 'added' | 'removed' | 'modified' | 'unchanged';
-      content: string;
-      newContent?: string;
-    }> = [];
-    
+  // Build a fine-grained op stream with indexes to enable merging and line numbers
+  private generateOpStream(
+    oldLines: string[],
+    newLines: string[],
+    lcs: number[][]
+  ): Array<{ type: 'added' | 'removed' | 'unchanged'; content: string; oldIndex: number; newIndex: number }> {
+    const ops: Array<{ type: 'added' | 'removed' | 'unchanged'; content: string; oldIndex: number; newIndex: number }> = [];
     let i = oldLines.length;
     let j = newLines.length;
-    
+
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-        result.unshift({
-          type: 'unchanged',
-          content: oldLines[i - 1] || '',
-        });
+        ops.unshift({ type: 'unchanged', content: oldLines[i - 1] || '', oldIndex: i - 1, newIndex: j - 1 });
         i--;
         j--;
       } else if (j > 0 && (i === 0 || (lcs[i]?.[j - 1] || 0) >= (lcs[i - 1]?.[j] || 0))) {
-        result.unshift({
-          type: 'added',
-          content: newLines[j - 1] || '',
-        });
+        ops.unshift({ type: 'added', content: newLines[j - 1] || '', oldIndex: i - 1, newIndex: j - 1 });
         j--;
       } else if (i > 0) {
-        result.unshift({
-          type: 'removed',
-          content: oldLines[i - 1] || '',
-        });
+        ops.unshift({ type: 'removed', content: oldLines[i - 1] || '', oldIndex: i - 1, newIndex: j - 1 });
         i--;
       }
     }
-    
-    return result;
+    return ops;
   }
 
   private calculateDiffStats(changes: DiffChange[]): {
@@ -357,13 +395,14 @@ export class DiffManager {
     for (const change of changes) {
       switch (change.type) {
         case 'added':
-          addedLines++;
+          addedLines += (change.newEnd ?? change.newStart ?? 0) - (change.newStart ?? 0) + 1;
           break;
         case 'removed':
-          removedLines++;
+          removedLines += (change.oldEnd ?? change.oldStart ?? 0) - (change.oldStart ?? 0) + 1;
           break;
         case 'modified':
-          modifiedLines++;
+          // count modified lines as size of new range
+          modifiedLines += (change.newEnd ?? change.newStart ?? 0) - (change.newStart ?? 0) + 1;
           break;
 
       }

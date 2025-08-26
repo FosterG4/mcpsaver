@@ -59,27 +59,27 @@ class CodeReferenceOptimizerServer {
         tools: [
           {
             name: 'extract_code_context',
-            description: 'Extract minimal code context from files using AST parsing',
+            description: 'Extract minimal, focused code context from source files using AST parsing. Intelligently identifies and extracts only the relevant code sections, imports, and dependencies needed for understanding specific symbols or functions. Optimizes token usage by filtering out unnecessary code while maintaining semantic completeness.',
             inputSchema: {
               type: 'object',
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Path to the source file',
+                  description: 'Absolute or relative path to the source file to analyze. Supports TypeScript, JavaScript, Python, Go, and other languages with tree-sitter parsers.',
                 },
                 targetSymbols: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'Specific symbols/functions to extract context for',
+                  description: 'Array of specific symbol names (functions, classes, variables, types) to extract context for. If empty or omitted, extracts context for the entire file.',
                 },
                 includeImports: {
                   type: 'boolean',
-                  description: 'Whether to include relevant imports',
+                  description: 'Whether to include import statements and dependencies relevant to the extracted symbols. Recommended for understanding symbol usage.',
                   default: true,
                 },
                 maxTokens: {
                   type: 'number',
-                  description: 'Maximum tokens to return',
+                  description: 'Maximum number of tokens to include in the response. Higher values provide more context but consume more resources. Range: 100-5000.',
                   default: 1000,
                 },
               },
@@ -88,17 +88,17 @@ class CodeReferenceOptimizerServer {
           },
           {
             name: 'get_cached_context',
-            description: 'Retrieve cached code context for a file',
+            description: 'Retrieve previously extracted and cached code context for a file. Provides fast access to analyzed code structures without re-parsing. Useful for repeated queries on the same file or when working with large codebases where re-analysis would be expensive.',
             inputSchema: {
               type: 'object',
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Path to the source file',
+                  description: 'Path to the source file for which to retrieve cached context. Must match the path used in previous extract_code_context calls.',
                 },
                 cacheKey: {
                   type: 'string',
-                  description: 'Optional cache key for specific context',
+                  description: 'Optional specific cache key to retrieve a particular cached analysis. If omitted, returns the most recent cached context for the file.',
                 },
               },
               required: ['filePath'],
@@ -106,21 +106,21 @@ class CodeReferenceOptimizerServer {
           },
           {
             name: 'analyze_code_diff',
-            description: 'Analyze differences between code versions and provide minimal updates',
+            description: 'Perform intelligent analysis of code differences between two versions of a file. Identifies semantic changes, structural modifications, and provides minimal update suggestions. Helps understand the impact of changes and suggests optimizations for code evolution.',
             inputSchema: {
               type: 'object',
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Path to the source file',
+                  description: 'Path to the source file being analyzed. Used for context and language detection.',
                 },
                 oldContent: {
                   type: 'string',
-                  description: 'Previous version of the code',
+                  description: 'Complete content of the previous version of the file. Should be the full file content, not just a snippet.',
                 },
                 newContent: {
                   type: 'string',
-                  description: 'Current version of the code',
+                  description: 'Complete content of the current version of the file. Should be the full file content, not just a snippet.',
                 },
               },
               required: ['filePath', 'oldContent', 'newContent'],
@@ -128,18 +128,18 @@ class CodeReferenceOptimizerServer {
           },
           {
             name: 'optimize_imports',
-            description: 'Analyze and optimize import statements to reduce redundancy',
+            description: 'Analyze and optimize import statements to eliminate redundancy and improve code efficiency. Identifies unused imports, suggests consolidation opportunities, and ensures only necessary dependencies are included. Helps reduce bundle size and improve compilation performance.',
             inputSchema: {
               type: 'object',
               properties: {
                 filePath: {
                   type: 'string',
-                  description: 'Path to the source file',
+                  description: 'Path to the source file containing import statements to optimize. File must exist and be readable.',
                 },
                 usedSymbols: {
                   type: 'array',
                   items: { type: 'string' },
-                  description: 'Symbols actually used in the context',
+                  description: 'Array of symbol names that are actually used in the code. If provided, helps identify unused imports more accurately.',
                 },
               },
               required: ['filePath'],
@@ -147,13 +147,13 @@ class CodeReferenceOptimizerServer {
           },
           {
             name: 'get_config',
-            description: 'Get current configuration settings',
+            description: 'Retrieve current configuration settings for the Code Reference Optimizer. Access global settings or specific configuration sections including cache behavior, extraction parameters, import analysis rules, diff analysis options, performance tuning, language-specific settings, logging configuration, and security policies.',
             inputSchema: {
               type: 'object',
               properties: {
                 section: {
                   type: 'string',
-                  description: 'Specific configuration section to retrieve (optional)',
+                  description: 'Specific configuration section to retrieve. Options: cache (caching behavior), extraction (code analysis settings), imports (import optimization rules), diff (difference analysis), performance (resource limits), languages (language-specific settings), logging (debug output), security (access controls).',
                   enum: ['cache', 'extraction', 'imports', 'diff', 'performance', 'languages', 'logging', 'security'],
                 },
               },
@@ -161,13 +161,13 @@ class CodeReferenceOptimizerServer {
           },
           {
             name: 'update_config',
-            description: 'Update configuration settings',
+            description: 'Update configuration settings with new values. Allows fine-tuning of the optimizer behavior including cache policies, token limits, analysis depth, performance thresholds, and feature toggles. Changes are applied immediately and persist for the current session.',
             inputSchema: {
               type: 'object',
               properties: {
                 config: {
                   type: 'object',
-                  description: 'Configuration updates to apply',
+                  description: 'Partial configuration object with updates to apply. Can include any combination of configuration sections. Changes are merged with existing settings, not replaced entirely.',
                 },
               },
               required: ['config'],
@@ -175,7 +175,7 @@ class CodeReferenceOptimizerServer {
           },
           {
             name: 'reset_config',
-            description: 'Reset configuration to default values',
+            description: 'Reset all configuration settings to their default values. Useful for troubleshooting configuration issues or returning to optimal baseline settings. This action cannot be undone and will clear all custom configuration modifications.',
             inputSchema: {
               type: 'object',
               properties: {},
