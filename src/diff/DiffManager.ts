@@ -1,5 +1,5 @@
-import * as fs from 'fs/promises';
-import type { DiffChange, SymbolChange } from '../types/index.js';
+import * as fs from "fs/promises";
+import type { DiffChange, SymbolChange } from "../types/index.js";
 
 export class DiffManager {
   private fileSnapshots: Map<string, string> = new Map();
@@ -10,7 +10,7 @@ export class DiffManager {
    */
   async createSnapshot(filePath: string): Promise<void> {
     try {
-      const content = await fs.readFile(filePath, 'utf-8');
+      const content = await fs.readFile(filePath, "utf-8");
       this.fileSnapshots.set(filePath, content);
     } catch (error) {
       console.warn(`Failed to create snapshot for ${filePath}:`, error);
@@ -27,7 +27,10 @@ export class DiffManager {
   /**
    * Create snapshots for specific symbols in a file
    */
-  async createSymbolSnapshots(filePath: string, symbols: Map<string, string>): Promise<void> {
+  async createSymbolSnapshots(
+    filePath: string,
+    symbols: Map<string, string>,
+  ): Promise<void> {
     this.symbolSnapshots.set(filePath, new Map(symbols));
   }
 
@@ -41,17 +44,22 @@ export class DiffManager {
     }
 
     try {
-      const currentContent = await fs.readFile(filePath, 'utf-8');
+      const currentContent = await fs.readFile(filePath, "utf-8");
       return this.computeDiff(snapshot, currentContent, filePath);
     } catch (error) {
-      throw new Error(`Failed to read current content of ${filePath}: ${error}`);
+      throw new Error(
+        `Failed to read current content of ${filePath}: ${error}`,
+      );
     }
   }
 
   /**
    * Generate diff for specific symbols
    */
-  async generateSymbolDiff(filePath: string, currentSymbols: Map<string, string>): Promise<SymbolChange[]> {
+  async generateSymbolDiff(
+    filePath: string,
+    currentSymbols: Map<string, string>,
+  ): Promise<SymbolChange[]> {
     const snapshot = this.symbolSnapshots.get(filePath);
     if (!snapshot) {
       throw new Error(`No symbol snapshot found for ${filePath}`);
@@ -68,7 +76,7 @@ export class DiffManager {
         // Symbol added
         changes.push({
           symbol: symbolName,
-          type: 'added',
+          type: "added",
           code: newContent,
           lineNumber: 0,
         });
@@ -76,8 +84,8 @@ export class DiffManager {
         // Symbol removed
         changes.push({
           symbol: symbolName,
-          type: 'removed',
-          code: '',
+          type: "removed",
+          code: "",
           lineNumber: 0,
           oldCode: oldContent,
         });
@@ -85,7 +93,7 @@ export class DiffManager {
         // Symbol modified
         changes.push({
           symbol: symbolName,
-          type: 'modified',
+          type: "modified",
           code: newContent,
           lineNumber: 0,
           oldCode: oldContent,
@@ -99,7 +107,10 @@ export class DiffManager {
   /**
    * Get minimal update containing only changed parts
    */
-  async getMinimalUpdate(filePath: string, targetSymbols?: string[]): Promise<{
+  async getMinimalUpdate(
+    filePath: string,
+    targetSymbols?: string[],
+  ): Promise<{
     changes: DiffChange[];
     addedLines: number;
     removedLines: number;
@@ -107,14 +118,12 @@ export class DiffManager {
     summary: string;
   }> {
     const changes = await this.generateFileDiff(filePath);
-    
+
     let filteredChanges = changes;
     if (targetSymbols && targetSymbols.length > 0) {
       // Filter changes to only include target symbols
-      filteredChanges = changes.filter(change => 
-        targetSymbols.some(symbol => 
-          change.content.includes(symbol)
-        )
+      filteredChanges = changes.filter((change) =>
+        targetSymbols.some((symbol) => change.content.includes(symbol)),
       );
     }
 
@@ -133,55 +142,58 @@ export class DiffManager {
    */
   applyDiff(originalContent: string, changes: DiffChange[]): string {
     const result = originalContent;
-    const lines = result.split('\n');
-    
+    const lines = result.split("\n");
+
     // Sort changes by line number in descending order to avoid index shifting
     const sortedChanges = [...changes];
-    
+
     for (const change of sortedChanges) {
       switch (change.type) {
-        case 'added':
+        case "added":
           lines.push(change.content);
           break;
-        case 'removed':
+        case "removed":
           // Skip removed lines
           break;
-        case 'modified':
+        case "modified":
           // Modified lines are handled in the diff generation
           break;
       }
     }
-    
-    return lines.join('\n');
+
+    return lines.join("\n");
   }
 
   /**
    * Generate context-aware diff that includes surrounding lines
    */
-  async generateContextualDiff(filePath: string, _contextLines: number = 3): Promise<DiffChange[]> {
+  async generateContextualDiff(
+    filePath: string,
+    _contextLines: number = 3,
+  ): Promise<DiffChange[]> {
     const changes = await this.generateFileDiff(filePath);
     const snapshot = this.fileSnapshots.get(filePath)!;
-    const snapshotLines = snapshot.split('\n');
-    
+    const snapshotLines = snapshot.split("\n");
+
     const contextualChanges: DiffChange[] = [];
     const processedLines = new Set<number>();
-    
+
     for (const _change of changes) {
       const startLine = 0;
       const endLine = snapshotLines.length - 1;
-      
+
       for (let i = startLine; i <= endLine; i++) {
         if (!processedLines.has(i)) {
           processedLines.add(i);
-          
+
           contextualChanges.push({
-            type: 'modified',
-            content: snapshotLines[i] || '',
+            type: "modified",
+            content: snapshotLines[i] || "",
           });
         }
       }
     }
-    
+
     return contextualChanges;
   }
 
@@ -208,7 +220,7 @@ export class DiffManager {
     }
 
     try {
-      const currentContent = await fs.readFile(filePath, 'utf-8');
+      const currentContent = await fs.readFile(filePath, "utf-8");
       return currentContent !== snapshot;
     } catch (error) {
       return true; // Error reading file, assume changed
@@ -238,54 +250,58 @@ export class DiffManager {
     return this.fileSnapshots.get(filePath);
   }
 
-  private computeDiff(oldContent: string, newContent: string, _filePath: string): DiffChange[] {
-    const oldLines = oldContent.split('\n');
-    const newLines = newContent.split('\n');
+  private computeDiff(
+    oldContent: string,
+    newContent: string,
+    _filePath: string,
+  ): DiffChange[] {
+    const oldLines = oldContent.split("\n");
+    const newLines = newContent.split("\n");
     const changes: DiffChange[] = [];
-    
+
     // Use Myers' algorithm for computing diffs
     const lcs = this.longestCommonSubsequence(oldLines, newLines);
     const diffResult = this.generateDiffFromLCS(oldLines, newLines, lcs);
-    
+
     let _lineNumber = 0;
     for (const item of diffResult) {
       switch (item.type) {
-        case 'added':
+        case "added":
           changes.push({
-            type: 'added',
+            type: "added",
             content: item.content,
           });
           _lineNumber++;
           break;
-        case 'removed':
+        case "removed":
           changes.push({
-            type: 'removed',
+            type: "removed",
             content: item.content,
           });
           break;
-        case 'modified':
+        case "modified":
           changes.push({
-            type: 'modified',
+            type: "modified",
             content: item.content,
           });
           _lineNumber++;
           break;
-        case 'unchanged':
+        case "unchanged":
           _lineNumber++;
           break;
       }
     }
-    
+
     return changes;
   }
-
-
 
   private longestCommonSubsequence(arr1: string[], arr2: string[]): number[][] {
     const m = arr1.length;
     const n = arr2.length;
-    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-    
+    const dp: number[][] = Array(m + 1)
+      .fill(null)
+      .map(() => Array(n + 1).fill(0));
+
     for (let i = 1; i <= m; i++) {
       for (let j = 1; j <= n; j++) {
         if (arr1[i - 1] === arr2[j - 1]) {
@@ -298,47 +314,54 @@ export class DiffManager {
         }
       }
     }
-    
+
     return dp;
   }
 
-  private generateDiffFromLCS(oldLines: string[], newLines: string[], lcs: number[][]): Array<{
-    type: 'added' | 'removed' | 'modified' | 'unchanged';
+  private generateDiffFromLCS(
+    oldLines: string[],
+    newLines: string[],
+    lcs: number[][],
+  ): Array<{
+    type: "added" | "removed" | "modified" | "unchanged";
     content: string;
     newContent?: string;
   }> {
     const result: Array<{
-      type: 'added' | 'removed' | 'modified' | 'unchanged';
+      type: "added" | "removed" | "modified" | "unchanged";
       content: string;
       newContent?: string;
     }> = [];
-    
+
     let i = oldLines.length;
     let j = newLines.length;
-    
+
     while (i > 0 || j > 0) {
       if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
         result.unshift({
-          type: 'unchanged',
-          content: oldLines[i - 1] || '',
+          type: "unchanged",
+          content: oldLines[i - 1] || "",
         });
         i--;
         j--;
-      } else if (j > 0 && (i === 0 || (lcs[i]?.[j - 1] || 0) >= (lcs[i - 1]?.[j] || 0))) {
+      } else if (
+        j > 0 &&
+        (i === 0 || (lcs[i]?.[j - 1] || 0) >= (lcs[i - 1]?.[j] || 0))
+      ) {
         result.unshift({
-          type: 'added',
-          content: newLines[j - 1] || '',
+          type: "added",
+          content: newLines[j - 1] || "",
         });
         j--;
       } else if (i > 0) {
         result.unshift({
-          type: 'removed',
-          content: oldLines[i - 1] || '',
+          type: "removed",
+          content: oldLines[i - 1] || "",
         });
         i--;
       }
     }
-    
+
     return result;
   }
 
@@ -353,22 +376,21 @@ export class DiffManager {
     let removedLines = 0;
     let modifiedLines = 0;
     const contextLines = 0;
-    
+
     for (const change of changes) {
       switch (change.type) {
-        case 'added':
+        case "added":
           addedLines++;
           break;
-        case 'removed':
+        case "removed":
           removedLines++;
           break;
-        case 'modified':
+        case "modified":
           modifiedLines++;
           break;
-
       }
     }
-    
+
     return {
       totalChanges: addedLines + removedLines + modifiedLines,
       addedLines,
@@ -378,30 +400,39 @@ export class DiffManager {
     };
   }
 
-  private generateDiffSummary(_changes: DiffChange[], stats: {
-    addedLines: number;
-    removedLines: number;
-    modifiedLines: number;
-    contextLines: number;
-  }): string {
+  private generateDiffSummary(
+    _changes: DiffChange[],
+    stats: {
+      addedLines: number;
+      removedLines: number;
+      modifiedLines: number;
+      contextLines: number;
+    },
+  ): string {
     const parts: string[] = [];
-    
+
     if (stats.addedLines > 0) {
-      parts.push(`${stats.addedLines} addition${stats.addedLines === 1 ? '' : 's'}`);
+      parts.push(
+        `${stats.addedLines} addition${stats.addedLines === 1 ? "" : "s"}`,
+      );
     }
-    
+
     if (stats.removedLines > 0) {
-      parts.push(`${stats.removedLines} deletion${stats.removedLines === 1 ? '' : 's'}`);
+      parts.push(
+        `${stats.removedLines} deletion${stats.removedLines === 1 ? "" : "s"}`,
+      );
     }
-    
+
     if (stats.modifiedLines > 0) {
-      parts.push(`${stats.modifiedLines} modification${stats.modifiedLines === 1 ? '' : 's'}`);
+      parts.push(
+        `${stats.modifiedLines} modification${stats.modifiedLines === 1 ? "" : "s"}`,
+      );
     }
-    
+
     if (parts.length === 0) {
-      return 'No changes detected';
+      return "No changes detected";
     }
-    
-    return parts.join(', ');
+
+    return parts.join(", ");
   }
 }

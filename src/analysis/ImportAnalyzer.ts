@@ -1,14 +1,17 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { parse as babelParse } from '@babel/parser';
-import traverse from '@babel/traverse';
-import * as t from '@babel/types';
-import type { ImportStatement, DependencyGraph } from '../types/index.js';
+import * as fs from "fs/promises";
+import * as path from "path";
+import type { SyntaxNode } from "tree-sitter";
+import {
+  TreeSitterParser,
+  type SupportedLanguageKey,
+} from "../parsers/tree_sitter/Parser.js";
+import type { ImportStatement, DependencyGraph } from "../types/index.js";
 
 export class ImportAnalyzer {
   private importCache: Map<string, ImportStatement[]> = new Map();
   private dependencyGraph: Map<string, DependencyGraph> = new Map();
   private packageJsonCache: Map<string, any> = new Map();
+  private tsParser = new TreeSitterParser();
 
   /**
    * Extract all import statements from a file
@@ -16,41 +19,50 @@ export class ImportAnalyzer {
   async extractImports(filePath: string): Promise<string[]> {
     const cached = this.importCache.get(filePath);
     if (cached) {
-      return cached.map(imp => imp.raw);
+      return cached.map((imp) => imp.raw);
     }
 
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, "utf-8");
     const imports = await this.parseImports(content, filePath);
-    
+
     this.importCache.set(filePath, imports);
-    return imports.map(imp => imp.raw);
+    return imports.map((imp) => imp.raw);
   }
 
   /**
    * Get minimal imports needed for specific symbols
    */
-  async getMinimalImports(filePath: string, usedSymbols: string[]): Promise<string[]> {
+  async getMinimalImports(
+    filePath: string,
+    usedSymbols: string[],
+  ): Promise<string[]> {
     await this.extractImports(filePath);
     const importStatements = this.importCache.get(filePath) || [];
-    
+
     if (usedSymbols.length === 0) {
       return [];
     }
 
     const minimalImports: string[] = [];
     const usedSymbolSet = new Set(usedSymbols);
-    
+
     for (const importStmt of importStatements) {
-      const relevantImports = this.filterRelevantImports(importStmt, usedSymbolSet);
+      const relevantImports = this.filterRelevantImports(
+        importStmt,
+        usedSymbolSet,
+      );
       if (relevantImports) {
         minimalImports.push(relevantImports);
       }
     }
 
     // Add transitive dependencies
-    const transitiveDeps = await this.getTransitiveDependencies(filePath, usedSymbols);
+    const transitiveDeps = await this.getTransitiveDependencies(
+      filePath,
+      usedSymbols,
+    );
     for (const dep of transitiveDeps) {
-      if (!minimalImports.some(imp => imp.includes(dep))) {
+      if (!minimalImports.some((imp) => imp.includes(dep))) {
         minimalImports.push(`import '${dep}';`);
       }
     }
@@ -74,24 +86,34 @@ export class ImportAnalyzer {
 
     await this.buildDependencyGraph(rootPath, graph);
     this.dependencyGraph.set(rootPath, graph);
-    
+
     return graph;
   }
 
   /**
    * Optimize imports by removing unused dependencies
    */
-  async optimizeImports(filePath: string, actuallyUsedSymbols: string[]): Promise<{
+  async optimizeImports(
+    filePath: string,
+    actuallyUsedSymbols: string[],
+  ): Promise<{
     optimizedImports: string[];
     removedImports: string[];
     addedImports: string[];
     warnings: string[];
   }> {
     const originalImports = await this.extractImports(filePath);
-    const minimalImports = await this.getMinimalImports(filePath, actuallyUsedSymbols);
-    
-    const removedImports = originalImports.filter(imp => !minimalImports.includes(imp));
-    const addedImports = minimalImports.filter(imp => !originalImports.includes(imp));
+    const minimalImports = await this.getMinimalImports(
+      filePath,
+      actuallyUsedSymbols,
+    );
+
+    const removedImports = originalImports.filter(
+      (imp) => !minimalImports.includes(imp),
+    );
+    const addedImports = minimalImports.filter(
+      (imp) => !originalImports.includes(imp),
+    );
     const warnings: string[] = [];
 
     // Check for potential issues
@@ -105,7 +127,9 @@ export class ImportAnalyzer {
     // Check for circular dependencies
     const circularDeps = await this.detectCircularDependencies(filePath);
     if (circularDeps.length > 0) {
-      warnings.push(`Circular dependencies detected: ${circularDeps.join(', ')}`);
+      warnings.push(
+        `Circular dependencies detected: ${circularDeps.join(", ")}`,
+      );
     }
 
     return {
@@ -119,14 +143,19 @@ export class ImportAnalyzer {
   /**
    * Get import suggestions based on usage patterns
    */
-  async getImportSuggestions(filePath: string, undefinedSymbols: string[]): Promise<Array<{
-    symbol: string;
-    suggestions: Array<{
-      importStatement: string;
-      confidence: number;
-      source: string;
-    }>;
-  }>> {
+  async getImportSuggestions(
+    filePath: string,
+    undefinedSymbols: string[],
+  ): Promise<
+    Array<{
+      symbol: string;
+      suggestions: Array<{
+        importStatement: string;
+        confidence: number;
+        source: string;
+      }>;
+    }>
+  > {
     const suggestions: Array<{
       symbol: string;
       suggestions: Array<{
@@ -137,7 +166,10 @@ export class ImportAnalyzer {
     }> = [];
 
     for (const symbol of undefinedSymbols) {
-      const symbolSuggestions = await this.findImportSuggestions(symbol, filePath);
+      const symbolSuggestions = await this.findImportSuggestions(
+        symbol,
+        filePath,
+      );
       suggestions.push({
         symbol,
         suggestions: symbolSuggestions,
@@ -156,50 +188,42 @@ export class ImportAnalyzer {
     this.packageJsonCache.clear();
   }
 
-  private async parseImports(content: string, filePath: string): Promise<ImportStatement[]> {
+  private async parseImports(
+    content: string,
+    filePath: string,
+  ): Promise<ImportStatement[]> {
     const imports: ImportStatement[] = [];
-    
-    try {
-      const ast = babelParse(content, {
-        sourceType: 'module',
-        allowImportExportEverywhere: true,
-        plugins: [
-          'jsx',
-          'typescript',
-          'decorators-legacy',
-          'classProperties',
-          'objectRestSpread',
-          'asyncGenerators',
-          'functionBind',
-          'exportDefaultFrom',
-          'exportNamespaceFrom',
-          'dynamicImport',
-          'nullishCoalescingOperator',
-          'optionalChaining',
-        ],
-      });
 
-      const self = this;
-      traverse(ast, {
-        ImportDeclaration(path) {
-          const node = path.node;
-          const importStatement = self.parseImportDeclaration(node, content);
-          if (importStatement) {
-            imports.push(importStatement);
+    try {
+      // Use Tree-sitter to find ESM import statements in JS/TS/TSX files
+      const langKey: SupportedLanguageKey =
+        this.tsParser.detectLanguageFromPath(filePath);
+      if (
+        (
+          ["javascript", "typescript", "tsx"] as SupportedLanguageKey[]
+        ).includes(langKey)
+      ) {
+        const { root } = await this.tsParser.parse(content, langKey);
+
+        const collect = (node: SyntaxNode) => {
+          if (node.type === "import_statement") {
+            const raw = content.slice(node.startIndex, node.endIndex);
+            const parsed = this.parseImportFromRaw(raw);
+            if (parsed) imports.push(parsed);
           }
-        },
-        CallExpression(path) {
-          // Handle dynamic imports
-          const node = path.node;
-          if (t.isImport(node.callee) && t.isStringLiteral(node.arguments[0])) {
-            imports.push({
-              source: node.arguments[0].value,
-              imports: [],
-              raw: `import('${node.arguments[0].value}')`,
-            });
-          }
-        },
-      });
+          for (const child of node.namedChildren) collect(child);
+        };
+        collect(root);
+      }
+
+      // Also detect dynamic imports via regex (language-agnostic)
+      const dynRe = /import\s*\(\s*['"]([^'"\\]+)['"]\s*\)/g;
+      let m: RegExpExecArray | null;
+      while ((m = dynRe.exec(content))) {
+        const mod = m[1];
+        const raw = m[0];
+        imports.push({ source: mod, imports: [], raw });
+      }
     } catch (error) {
       console.warn(`Failed to parse imports from ${filePath}:`, error);
     }
@@ -207,48 +231,81 @@ export class ImportAnalyzer {
     return imports;
   }
 
-  private parseImportDeclaration(node: t.ImportDeclaration, content: string): ImportStatement | null {
-    const source = node.source.value;
-    const imports: ImportStatement['imports'] = [];
-    
-    for (const specifier of node.specifiers) {
-      if (t.isImportDefaultSpecifier(specifier)) {
-        imports.push({
-          name: specifier.local.name,
-          isDefault: true,
-        });
-      } else if (t.isImportNamespaceSpecifier(specifier)) {
-        imports.push({
-          name: specifier.local.name,
-          isNamespace: true,
-        });
-      } else if (t.isImportSpecifier(specifier)) {
-        const importedName = t.isIdentifier(specifier.imported) 
-          ? specifier.imported.name 
-          : specifier.imported.value;
-        
-        const alias = specifier.local.name !== importedName ? specifier.local.name : undefined;
-        imports.push({
-          name: importedName,
-          ...(alias && { alias }),
-        });
-      }
+  private parseImportFromRaw(raw: string): ImportStatement | null {
+    const text = raw.trim().replace(/;\s*$/, "");
+    if (!text.startsWith("import")) return null;
+
+    // Side-effect import: import 'module';
+    const sideEffect = text.match(/^import\s+['"]([^'"\\]+)['"]/);
+    if (sideEffect) {
+      return { source: sideEffect[1]!, imports: [], raw };
     }
 
-    // Extract raw import statement from source
-    const start = node.start || 0;
-    const end = node.end || 0;
-    const raw = content.slice(start, end);
+    // Structured import: import <spec> from 'module'; (may include 'type')
+    const m = text.match(/^import\s+(.*?)\s+from\s+['"]([^'"\\]+)['"]/);
+    if (!m) return null;
 
-    return {
-      source,
-      imports,
-      raw,
+    let spec = m[1]!.trim();
+    const source = m[2]!;
+
+    // Handle TS type-only imports: 'type { Foo }'
+    if (spec.startsWith("type ")) spec = spec.slice(5).trim();
+
+    const imports: ImportStatement["imports"] = [];
+
+    const addDefault = (name: string) => {
+      if (!name) return;
+      imports.push({ name, isDefault: true });
     };
+    const addNamespace = (name: string) => {
+      if (!name) return;
+      imports.push({ name, isNamespace: true });
+    };
+    const addNamed = (name: string, alias?: string) => {
+      if (!name) return;
+      imports.push(alias && alias !== name ? { name, alias } : { name });
+    };
+
+    const parseNamedBlock = (block: string) => {
+      // block like: { a, b as c }
+      const inner = block.slice(1, -1).trim();
+      if (!inner) return;
+      for (const part of inner.split(",")) {
+        const p = part.trim();
+        if (!p) continue;
+        const asMatch = p.match(/^(\w+)\s+as\s+(\w+)$/);
+        if (asMatch) addNamed(asMatch[1]!, asMatch[2]!);
+        else addNamed(p);
+      }
+    };
+
+    if (spec.startsWith("* as ")) {
+      addNamespace(spec.slice(5).trim());
+    } else if (spec.startsWith("{")) {
+      parseNamedBlock(spec);
+    } else if (spec.includes(",")) {
+      // default plus named/namespace
+      const [left, rightRaw] = [
+        spec.split(",")[0]!.trim(),
+        spec.slice(spec.indexOf(",") + 1).trim(),
+      ];
+      addDefault(left);
+      const right = rightRaw.trim();
+      if (right.startsWith("* as ")) addNamespace(right.slice(5).trim());
+      else if (right.startsWith("{")) parseNamedBlock(right);
+    } else {
+      // default only
+      addDefault(spec);
+    }
+
+    return { source, imports, raw };
   }
 
-  private filterRelevantImports(importStmt: ImportStatement, usedSymbols: Set<string>): string | null {
-    const relevantImports = importStmt.imports.filter(imp => {
+  private filterRelevantImports(
+    importStmt: ImportStatement,
+    usedSymbols: Set<string>,
+  ): string | null {
+    const relevantImports = importStmt.imports.filter((imp) => {
       const symbolName = imp.alias || imp.name;
       return usedSymbols.has(symbolName);
     });
@@ -265,14 +322,17 @@ export class ImportAnalyzer {
     return this.reconstructImportStatement(importStmt.source, relevantImports);
   }
 
-  private reconstructImportStatement(source: string, imports: ImportStatement['imports']): string {
+  private reconstructImportStatement(
+    source: string,
+    imports: ImportStatement["imports"],
+  ): string {
     if (imports.length === 0) {
       return `import '${source}';`;
     }
 
     const parts: string[] = [];
     const namedImports: string[] = [];
-    
+
     for (const imp of imports) {
       if (imp.isDefault) {
         parts.push(imp.name);
@@ -285,16 +345,19 @@ export class ImportAnalyzer {
     }
 
     if (namedImports.length > 0) {
-      parts.push(`{ ${namedImports.join(', ')} }`);
+      parts.push(`{ ${namedImports.join(", ")} }`);
     }
 
-    return `import ${parts.join(', ')} from '${source}';`;
+    return `import ${parts.join(", ")} from '${source}';`;
   }
 
-  private async getTransitiveDependencies(filePath: string, symbols: string[]): Promise<string[]> {
+  private async getTransitiveDependencies(
+    filePath: string,
+    symbols: string[],
+  ): Promise<string[]> {
     const dependencies: Set<string> = new Set();
     const visited: Set<string> = new Set();
-    
+
     const traverse = async (currentFile: string, currentSymbols: string[]) => {
       if (visited.has(currentFile)) {
         return;
@@ -304,19 +367,25 @@ export class ImportAnalyzer {
       try {
         await this.extractImports(currentFile);
         const importStatements = this.importCache.get(currentFile) || [];
-        
+
         for (const importStmt of importStatements) {
-          const resolvedPath = await this.resolveImportPath(importStmt.source, currentFile);
+          const resolvedPath = await this.resolveImportPath(
+            importStmt.source,
+            currentFile,
+          );
           if (resolvedPath && !this.isNodeModule(importStmt.source)) {
             dependencies.add(importStmt.source);
-            
+
             // Check if any of the imported symbols are used
-            const usedFromThisImport = importStmt.imports.filter(imp => 
-              currentSymbols.includes(imp.alias || imp.name)
+            const usedFromThisImport = importStmt.imports.filter((imp) =>
+              currentSymbols.includes(imp.alias || imp.name),
             );
-            
+
             if (usedFromThisImport.length > 0) {
-              await traverse(resolvedPath, usedFromThisImport.map(imp => imp.name));
+              await traverse(
+                resolvedPath,
+                usedFromThisImport.map((imp) => imp.name),
+              );
             }
           }
         }
@@ -329,9 +398,12 @@ export class ImportAnalyzer {
     return Array.from(dependencies);
   }
 
-  private async buildDependencyGraph(rootPath: string, graph: DependencyGraph): Promise<void> {
+  private async buildDependencyGraph(
+    rootPath: string,
+    graph: DependencyGraph,
+  ): Promise<void> {
     const visited: Set<string> = new Set();
-    
+
     const traverse = async (filePath: string) => {
       if (visited.has(filePath)) {
         return;
@@ -341,13 +413,16 @@ export class ImportAnalyzer {
       try {
         await this.extractImports(filePath);
         const importStatements = this.importCache.get(filePath) || [];
-        
+
         if (!graph.edges.has(filePath)) {
           graph.edges.set(filePath, new Set());
         }
-        
+
         for (const importStmt of importStatements) {
-          const resolvedPath = await this.resolveImportPath(importStmt.source, filePath);
+          const resolvedPath = await this.resolveImportPath(
+            importStmt.source,
+            filePath,
+          );
           if (resolvedPath && !this.isNodeModule(importStmt.source)) {
             graph.edges.get(filePath)?.add(resolvedPath);
             await traverse(resolvedPath);
@@ -364,7 +439,7 @@ export class ImportAnalyzer {
   private deduplicateImports(imports: string[]): string[] {
     const seen = new Set<string>();
     const deduplicated: string[] = [];
-    
+
     for (const imp of imports) {
       const normalized = imp.trim();
       if (!seen.has(normalized)) {
@@ -372,54 +447,61 @@ export class ImportAnalyzer {
         deduplicated.push(imp);
       }
     }
-    
+
     return deduplicated;
   }
 
   private detectSideEffectImports(imports: string[]): string[] {
-    return imports.filter(imp => {
+    return imports.filter((imp) => {
       // Side-effect imports typically don't have named imports
       return imp.match(/^import\s+['"][^'"]+['"];?$/);
     });
   }
 
-  private async detectCircularDependencies(filePath: string): Promise<string[]> {
+  private async detectCircularDependencies(
+    filePath: string,
+  ): Promise<string[]> {
     const graph = await this.analyzeDependencies(filePath);
     const cycles: string[] = [];
     const visited = new Set<string>();
     const recursionStack = new Set<string>();
-    
+
     const dfs = (node: string, path: string[]): void => {
       if (recursionStack.has(node)) {
         const cycleStart = path.indexOf(node);
-        cycles.push(path.slice(cycleStart).join(' -> '));
+        cycles.push(path.slice(cycleStart).join(" -> "));
         return;
       }
-      
+
       if (visited.has(node)) {
         return;
       }
-      
+
       visited.add(node);
       recursionStack.add(node);
-      
+
       const neighbors = graph.edges.get(node) || new Set();
       for (const neighbor of neighbors) {
         dfs(neighbor, [...path, neighbor]);
       }
-      
+
       recursionStack.delete(node);
     };
-    
+
     dfs(filePath, [filePath]);
     return cycles;
   }
 
-  private async findImportSuggestions(symbol: string, filePath: string): Promise<Array<{
-    importStatement: string;
-    confidence: number;
-    source: string;
-  }>> {
+  private async findImportSuggestions(
+    symbol: string,
+    filePath: string,
+  ): Promise<
+    Array<{
+      importStatement: string;
+      confidence: number;
+      source: string;
+    }>
+  > {
     const suggestions: Array<{
       importStatement: string;
       confidence: number;
@@ -434,10 +516,13 @@ export class ImportAnalyzer {
         ...packageJson.devDependencies,
         ...packageJson.peerDependencies,
       };
-      
+
       for (const [pkg, _version] of Object.entries(allDeps)) {
         // Simple heuristic: if symbol name matches or is similar to package name
-        const similarity = this.calculateSimilarity(symbol.toLowerCase(), pkg.toLowerCase());
+        const similarity = this.calculateSimilarity(
+          symbol.toLowerCase(),
+          pkg.toLowerCase(),
+        );
         if (similarity > 0.6) {
           suggestions.push({
             importStatement: `import { ${symbol} } from '${pkg}';`,
@@ -451,16 +536,19 @@ export class ImportAnalyzer {
     return suggestions.sort((a, b) => b.confidence - a.confidence);
   }
 
-  private async resolveImportPath(importPath: string, fromFile: string): Promise<string | null> {
+  private async resolveImportPath(
+    importPath: string,
+    fromFile: string,
+  ): Promise<string | null> {
     if (this.isNodeModule(importPath)) {
       return null; // Don't resolve node modules
     }
 
     const dir = path.dirname(fromFile);
     const resolved = path.resolve(dir, importPath);
-    
+
     // Try different extensions
-    const extensions = ['.ts', '.tsx', '.js', '.jsx', '.json'];
+    const extensions = [".ts", ".tsx", ".js", ".jsx", ".json"];
     for (const ext of extensions) {
       const withExt = resolved + ext;
       try {
@@ -470,7 +558,7 @@ export class ImportAnalyzer {
         // Continue to next extension
       }
     }
-    
+
     // Try index files
     for (const ext of extensions) {
       const indexFile = path.join(resolved, `index${ext}`);
@@ -481,73 +569,75 @@ export class ImportAnalyzer {
         // Continue to next extension
       }
     }
-    
+
     return null;
   }
 
   private isNodeModule(importPath: string): boolean {
-    return !importPath.startsWith('.') && !importPath.startsWith('/');
+    return !importPath.startsWith(".") && !importPath.startsWith("/");
   }
 
   private async getPackageJson(filePath: string): Promise<any | null> {
     let dir = path.dirname(filePath);
-    
+
     while (dir !== path.dirname(dir)) {
-      const packageJsonPath = path.join(dir, 'package.json');
-      
+      const packageJsonPath = path.join(dir, "package.json");
+
       if (this.packageJsonCache.has(packageJsonPath)) {
         return this.packageJsonCache.get(packageJsonPath);
       }
-      
+
       try {
-        const content = await fs.readFile(packageJsonPath, 'utf-8');
+        const content = await fs.readFile(packageJsonPath, "utf-8");
         const packageJson = JSON.parse(content);
         this.packageJsonCache.set(packageJsonPath, packageJson);
         return packageJson;
       } catch {
         // Continue to parent directory
       }
-      
+
       dir = path.dirname(dir);
     }
-    
+
     return null;
   }
 
   private calculateSimilarity(str1: string, str2: string): number {
     const longer = str1.length > str2.length ? str1 : str2;
     const shorter = str1.length > str2.length ? str2 : str1;
-    
+
     if (longer.length === 0) {
       return 1.0;
     }
-    
+
     const editDistance = this.levenshteinDistance(longer, shorter);
     return (longer.length - editDistance) / longer.length;
   }
 
   private levenshteinDistance(str1: string, str2: string): number {
-    const matrix: number[][] = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(0));
-    
+    const matrix: number[][] = Array(str2.length + 1)
+      .fill(null)
+      .map(() => Array(str1.length + 1).fill(0));
+
     for (let i = 0; i <= str1.length; i++) {
       matrix[0]![i] = i;
     }
-    
+
     for (let j = 0; j <= str2.length; j++) {
       matrix[j]![0] = j;
     }
-    
+
     for (let j = 1; j <= str2.length; j++) {
       for (let i = 1; i <= str1.length; i++) {
         const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
         matrix[j]![i] = Math.min(
           matrix[j]![i - 1]! + 1, // deletion
           matrix[j - 1]![i]! + 1, // insertion
-          matrix[j - 1]![i - 1]! + indicator // substitution
+          matrix[j - 1]![i - 1]! + indicator, // substitution
         );
       }
     }
-    
+
     return matrix[str2.length]![str1.length]!;
   }
 }

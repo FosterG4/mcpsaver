@@ -1,31 +1,81 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { parse } from '@babel/parser';
-import { parse as parsePython } from 'python-ast';
-import Parser from 'tree-sitter';
-import Go from 'tree-sitter-go';
-import Rust from 'tree-sitter-rust';
-import type { ASTNode, ExtractedContext, SymbolInfo, FileLanguage } from '../types/index.js';
+import * as fs from "fs/promises";
+import * as path from "path";
+import type { SyntaxNode } from "tree-sitter";
+import {
+  TreeSitterParser,
+  type SupportedLanguageKey,
+} from "./tree_sitter/Parser.js";
+import type {
+  ASTNode,
+  ExtractedContext,
+  SymbolInfo,
+  FileLanguage,
+} from "../types/index.js";
 
 export class ASTParser {
   private supportedLanguages: FileLanguage[] = [
-    { extension: '.ts', parser: 'typescript' },
-    { extension: '.tsx', parser: 'typescript' },
-    { extension: '.js', parser: 'javascript' },
-    { extension: '.jsx', parser: 'javascript' },
-    { extension: '.mjs', parser: 'javascript' },
-    { extension: '.py', parser: 'python' },
-    { extension: '.java', parser: 'java' },
-    { extension: '.cs', parser: 'csharp' },
-    { extension: '.go', parser: 'go' },
-    { extension: '.rs', parser: 'rust' },
+    // TypeScript / JavaScript
+    { extension: ".ts", parser: "typescript" },
+    { extension: ".tsx", parser: "typescript" },
+    { extension: ".mts", parser: "typescript" },
+    { extension: ".cts", parser: "typescript" },
+    { extension: ".js", parser: "javascript" },
+    { extension: ".jsx", parser: "javascript" },
+    { extension: ".mjs", parser: "javascript" },
+    { extension: ".cjs", parser: "javascript" },
+
+    // Data
+    { extension: ".json", parser: "json" },
+
+    // Python / Go / Rust / Java / C#
+    { extension: ".py", parser: "python" },
+    { extension: ".go", parser: "go" },
+    { extension: ".rs", parser: "rust" },
+    { extension: ".java", parser: "java" },
+    { extension: ".cs", parser: "csharp" },
+
+    // C and C++ (headers included)
+    { extension: ".c", parser: "c" },
+    { extension: ".h", parser: "c" },
+    { extension: ".cpp", parser: "cpp" },
+    { extension: ".cc", parser: "cpp" },
+    { extension: ".cxx", parser: "cpp" },
+    { extension: ".c++", parser: "cpp" },
+    { extension: ".hpp", parser: "cpp" },
+    { extension: ".hh", parser: "cpp" },
+    { extension: ".hxx", parser: "cpp" },
+
+    // Web
+    { extension: ".html", parser: "html" },
+    { extension: ".htm", parser: "html" },
+    { extension: ".css", parser: "css" },
+
+    // Shell
+    { extension: ".sh", parser: "bash" },
+    { extension: ".bash", parser: "bash" },
+
+    // Other languages
+    { extension: ".php", parser: "php" },
+    { extension: ".rb", parser: "ruby" },
+    { extension: ".swift", parser: "swift" },
+    { extension: ".toml", parser: "toml" },
+    { extension: ".regex", parser: "regex" },
+    { extension: ".scala", parser: "scala" },
+    { extension: ".hs", parser: "haskell" },
+    { extension: ".ml", parser: "ocaml" },
+    { extension: ".mli", parser: "ocaml" },
+    { extension: ".ql", parser: "ql" },
+    { extension: ".jl", parser: "julia" },
   ];
+
+  // New Tree-sitter based parser
+  private tsParser = new TreeSitterParser();
 
   /**
    * Parse a file and return its AST
    */
   async parseFile(filePath: string): Promise<ASTNode> {
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fs.readFile(filePath, "utf-8");
     return this.parseContent(content, filePath);
   }
 
@@ -33,43 +83,62 @@ export class ASTParser {
    * Parse content string and return its AST
    */
   async parseContent(content: string, filePath: string): Promise<ASTNode> {
-    const language = this.detectLanguage(filePath);
-    
-    switch (language.parser) {
-      case 'typescript':
-      case 'javascript':
-        return this.parseJavaScriptTypeScript(content, language.parser === 'typescript');
-      case 'python':
-        return this.parsePython(content);
-      case 'go':
-        return this.parseGo(content);
-      case 'rust':
-        return this.parseRust(content);
-      default:
-        throw new Error(`Unsupported language: ${language.parser}`);
-    }
+    // Use TreeSitterParser language detection to cover all supported grammars
+    const key = this.tsParser.detectLanguageFromPath(filePath);
+    const { root } = await this.tsParser.parse(content, key);
+    return this.convertTSTreeToGeneric(root);
+  }
+
+  // Generic conversion from Tree-sitter SyntaxNode -> our ASTNode
+  private convertTSTreeToGeneric(node: SyntaxNode): ASTNode {
+    const toAst = (n: SyntaxNode): ASTNode => {
+      const children = (n.namedChildren || []).map(toAst);
+      return {
+        type: n.type,
+        start: n.startIndex,
+        end: n.endIndex,
+        loc: {
+          start: {
+            line: n.startPosition.row + 1,
+            column: n.startPosition.column,
+          },
+          end: { line: n.endPosition.row + 1, column: n.endPosition.column },
+        },
+        children,
+      };
+    };
+    return toAst(node);
   }
 
   /**
    * Extract minimal context for specific symbols
    */
-  async extractContext(ast: ASTNode, targetSymbols?: string[]): Promise<ExtractedContext> {
+  async extractContext(
+    ast: ASTNode,
+    targetSymbols?: string[],
+  ): Promise<ExtractedContext> {
     const symbols = this.extractSymbols(ast);
     const dependencies = this.extractDependencies(ast, symbols);
     const imports = this.extractImports(ast);
     const exports = this.extractExports(ast);
-    
+
     let relevantSymbols = symbols;
     if (targetSymbols && targetSymbols.length > 0) {
-      relevantSymbols = this.filterRelevantSymbols(symbols, targetSymbols, dependencies);
+      relevantSymbols = this.filterRelevantSymbols(
+        symbols,
+        targetSymbols,
+        dependencies,
+      );
     }
-    
+
     const code = this.generateMinimalCode(ast, relevantSymbols);
-    
+
     return {
       code,
-      symbols: relevantSymbols.map(s => s.name),
-      dependencies: Array.from(new Set(relevantSymbols.flatMap(s => s.dependencies))),
+      symbols: relevantSymbols.map((s) => s.name),
+      dependencies: Array.from(
+        new Set(relevantSymbols.flatMap((s) => s.dependencies)),
+      ),
       imports,
       exports,
     };
@@ -77,112 +146,84 @@ export class ASTParser {
 
   private detectLanguage(filePath: string): FileLanguage {
     const ext = path.extname(filePath).toLowerCase();
-    const language = this.supportedLanguages.find(lang => lang.extension === ext);
-    
+    const language = this.supportedLanguages.find(
+      (lang) => lang.extension === ext,
+    );
+
     if (!language) {
       throw new Error(`Unsupported file extension: ${ext}`);
     }
-    
+
     return language;
   }
 
-  private parseJavaScriptTypeScript(content: string, isTypeScript: boolean): ASTNode {
-    try {
-      const ast = parse(content, {
-        sourceType: 'module',
-        allowImportExportEverywhere: true,
-        allowReturnOutsideFunction: true,
-        plugins: [
-          'jsx',
-          ['decorators', { decoratorsBeforeExport: false }],
-          'classProperties',
-          'objectRestSpread',
-          'functionBind',
-          'exportDefaultFrom',
-          'exportNamespaceFrom',
-          'dynamicImport',
-          'nullishCoalescingOperator',
-          'optionalChaining',
-          ...(isTypeScript ? ['typescript' as const] : []),
-        ],
-      });
-      
-      return this.convertBabelASTToGeneric(ast);
-    } catch (error) {
-      throw new Error(`Failed to parse JavaScript/TypeScript: ${error instanceof Error ? error.message : String(error)}`);
-    }
+  private parseJavaScriptTypeScript(
+    _content: string,
+    _isTypeScript: boolean,
+  ): ASTNode {
+    throw new Error(
+      "Deprecated: Babel parser path removed. Use Tree-sitter path via parseContent.",
+    );
   }
 
-  private parsePython(content: string): ASTNode {
-    try {
-      const pythonAst = parsePython(content);
-      return this.convertPythonASTToGeneric(pythonAst);
-    } catch (error) {
-      throw new Error(`Failed to parse Python code: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  private parsePython(_content: string): ASTNode {
+    throw new Error(
+      "Deprecated: Python ANTLR parser path removed. Use Tree-sitter path via parseContent.",
+    );
   }
 
-  private parseGo(content: string): ASTNode {
-    try {
-      const parser = new Parser();
-      parser.setLanguage(Go);
-      const tree = parser.parse(content);
-      return this.convertGoASTToGeneric(tree.rootNode, content);
-    } catch (error) {
-      throw new Error(`Failed to parse Go code: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  private parseGo(_content: string): ASTNode {
+    throw new Error(
+      "Deprecated: Go parser path removed. Use Tree-sitter path via parseContent.",
+    );
   }
 
-  private parseRust(content: string): ASTNode {
-    try {
-      const parser = new Parser();
-      parser.setLanguage(Rust);
-      const tree = parser.parse(content);
-      return this.convertRustASTToGeneric(tree.rootNode, content);
-    } catch (error) {
-      throw new Error(`Failed to parse Rust code: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  private parseRust(_content: string): ASTNode {
+    throw new Error(
+      "Deprecated: Rust parser path removed. Use Tree-sitter path via parseContent.",
+    );
   }
 
   private convertPythonASTToGeneric(pythonAst: any): ASTNode {
     const convertNode = (node: any): ASTNode => {
-      if (!node || typeof node !== 'object') {
+      if (!node || typeof node !== "object") {
         return {
-          type: 'Unknown',
+          type: "Unknown",
           start: 0,
           end: 0,
           loc: {
             start: { line: 0, column: 0 },
-            end: { line: 0, column: 0 }
+            end: { line: 0, column: 0 },
           },
           children: [],
-          metadata: { raw: String(node) }
+          metadata: { raw: String(node) },
         };
       }
 
       // Get node type from constructor name or other properties
-      const nodeType = node.constructor?.name || node._type || node.type || 'Unknown';
-      
+      const nodeType =
+        node.constructor?.name || node._type || node.type || "Unknown";
+
       const genericNode: ASTNode = {
         type: nodeType,
         start: node._start?.start || 0,
         end: node._stop?.stop || 0,
         loc: {
-          start: { 
-            line: node._start?.line || 0, 
-            column: node._start?.column || 0 
+          start: {
+            line: node._start?.line || 0,
+            column: node._start?.column || 0,
           },
-          end: { 
-            line: node._stop?.line || node._start?.line || 0, 
-            column: node._stop?.column || node._start?.column || 0 
-          }
+          end: {
+            line: node._stop?.line || node._start?.line || 0,
+            column: node._stop?.column || node._start?.column || 0,
+          },
         },
         children: [],
         metadata: {
           line: node._start?.line,
           column: node._start?.column,
-          raw: node.getText ? node.getText() : ''
-        }
+          raw: node.getText ? node.getText() : "",
+        },
       };
 
       // Process children if they exist
@@ -192,87 +233,96 @@ export class ASTParser {
 
       // Handle specific ANTLR node types for Python parsing
       switch (nodeType) {
-        case 'StmtContext':
+        case "StmtContext":
           // StmtContext is a wrapper, look at its children for actual statements
           if (node.children && node.children.length > 0) {
             const firstChild = node.children[0];
-            const childType = firstChild.constructor?.name || 'Unknown';
-            
-            if (childType === 'Compound_stmtContext') {
+            const childType = firstChild.constructor?.name || "Unknown";
+
+            if (childType === "Compound_stmtContext") {
               // Look deeper into compound statements
               const compoundChild = firstChild.children?.[0];
-              const compoundType = compoundChild?.constructor?.name || 'Unknown';
-              
+              const compoundType =
+                compoundChild?.constructor?.name || "Unknown";
+
               switch (compoundType) {
-                case 'FuncdefContext':
-                  genericNode.type = 'FunctionDef';
+                case "FuncdefContext":
+                  genericNode.type = "FunctionDef";
                   const funcName = this.extractPythonName(compoundChild);
                   if (funcName) genericNode.name = funcName;
                   break;
-                case 'Async_stmtContext':
+                case "Async_stmtContext":
                   // Look for async function definition
-                  const asyncChild = compoundChild.children?.find((c: any) => c.constructor?.name === 'FuncdefContext');
+                  const asyncChild = compoundChild.children?.find(
+                    (c: any) => c.constructor?.name === "FuncdefContext",
+                  );
                   if (asyncChild) {
-                    genericNode.type = 'AsyncFunctionDef';
+                    genericNode.type = "AsyncFunctionDef";
                     const asyncFuncName = this.extractPythonName(asyncChild);
                     if (asyncFuncName) genericNode.name = asyncFuncName;
                     if (!genericNode.metadata) genericNode.metadata = {};
-                    genericNode.metadata['isAsync'] = true;
+                    genericNode.metadata["isAsync"] = true;
                   }
                   break;
-                case 'ClassdefContext':
-                  genericNode.type = 'ClassDef';
+                case "ClassdefContext":
+                  genericNode.type = "ClassDef";
                   const className = this.extractPythonName(compoundChild);
                   if (className) genericNode.name = className;
                   break;
-                case 'DecoratedContext':
+                case "DecoratedContext":
                   // Handle decorated functions/classes
-                  const decoratedChild = compoundChild.children?.find((c: any) => 
-                    c.constructor?.name === 'FuncdefContext' || c.constructor?.name === 'ClassdefContext'
+                  const decoratedChild = compoundChild.children?.find(
+                    (c: any) =>
+                      c.constructor?.name === "FuncdefContext" ||
+                      c.constructor?.name === "ClassdefContext",
                   );
                   if (decoratedChild) {
                     const decoratedType = decoratedChild.constructor?.name;
-                    if (decoratedType === 'FuncdefContext') {
-                      genericNode.type = 'FunctionDef';
-                      const decoratedFuncName = this.extractPythonName(decoratedChild);
-                      if (decoratedFuncName) genericNode.name = decoratedFuncName;
+                    if (decoratedType === "FuncdefContext") {
+                      genericNode.type = "FunctionDef";
+                      const decoratedFuncName =
+                        this.extractPythonName(decoratedChild);
+                      if (decoratedFuncName)
+                        genericNode.name = decoratedFuncName;
                       if (!genericNode.metadata) genericNode.metadata = {};
-                      genericNode.metadata['hasDecorators'] = true;
-                    } else if (decoratedType === 'ClassdefContext') {
-                      genericNode.type = 'ClassDef';
-                      const decoratedClassName = this.extractPythonName(decoratedChild);
-                      if (decoratedClassName) genericNode.name = decoratedClassName;
+                      genericNode.metadata["hasDecorators"] = true;
+                    } else if (decoratedType === "ClassdefContext") {
+                      genericNode.type = "ClassDef";
+                      const decoratedClassName =
+                        this.extractPythonName(decoratedChild);
+                      if (decoratedClassName)
+                        genericNode.name = decoratedClassName;
                       if (!genericNode.metadata) genericNode.metadata = {};
-                      genericNode.metadata['hasDecorators'] = true;
+                      genericNode.metadata["hasDecorators"] = true;
                     }
                   }
                   break;
-                case 'If_stmtContext':
-                  genericNode.type = 'If';
+                case "If_stmtContext":
+                  genericNode.type = "If";
                   break;
-                case 'For_stmtContext':
-                  genericNode.type = 'For';
+                case "For_stmtContext":
+                  genericNode.type = "For";
                   break;
-                case 'While_stmtContext':
-                  genericNode.type = 'While';
+                case "While_stmtContext":
+                  genericNode.type = "While";
                   break;
                 default:
                   genericNode.type = compoundType;
               }
-            } else if (childType === 'Simple_stmtContext') {
+            } else if (childType === "Simple_stmtContext") {
               // Handle simple statements like assignments, imports
               const simpleChild = firstChild.children?.[0];
-              const simpleType = simpleChild?.constructor?.name || 'Unknown';
-              
+              const simpleType = simpleChild?.constructor?.name || "Unknown";
+
               switch (simpleType) {
-                case 'Import_nameContext':
-                case 'Import_fromContext':
-                  genericNode.type = 'Import';
+                case "Import_nameContext":
+                case "Import_fromContext":
+                  genericNode.type = "Import";
                   if (!genericNode.metadata) genericNode.metadata = {};
-                  genericNode.metadata['isImport'] = true;
+                  genericNode.metadata["isImport"] = true;
                   break;
-                case 'Expr_stmtContext':
-                  genericNode.type = 'Assignment';
+                case "Expr_stmtContext":
+                  genericNode.type = "Assignment";
                   break;
                 default:
                   genericNode.type = simpleType;
@@ -280,24 +330,24 @@ export class ASTParser {
             }
           }
           break;
-          
-        case 'TerminalNode':
+
+        case "TerminalNode":
           // Terminal nodes contain actual text tokens
-          genericNode.type = 'Terminal';
+          genericNode.type = "Terminal";
           break;
-          
+
         default:
           // For other context types, try to extract meaningful type names
-          if (nodeType.endsWith('Context')) {
-            const baseType = nodeType.replace('Context', '');
-            if (baseType.includes('Funcdef')) {
-              genericNode.type = 'FunctionDef';
-            } else if (baseType.includes('Classdef')) {
-              genericNode.type = 'ClassDef';
-            } else if (baseType.includes('Import')) {
-              genericNode.type = 'Import';
+          if (nodeType.endsWith("Context")) {
+            const baseType = nodeType.replace("Context", "");
+            if (baseType.includes("Funcdef")) {
+              genericNode.type = "FunctionDef";
+            } else if (baseType.includes("Classdef")) {
+              genericNode.type = "ClassDef";
+            } else if (baseType.includes("Import")) {
+              genericNode.type = "Import";
             } else {
-              genericNode.type = baseType || 'Unknown';
+              genericNode.type = baseType || "Unknown";
             }
           }
           break;
@@ -310,49 +360,59 @@ export class ASTParser {
   }
 
   private extractPythonName(node: any): string | undefined {
-     if (!node || !node.children) return undefined;
-     
-     // Look for NAME tokens in the children
-     for (const child of node.children) {
-       if (child.constructor?.name === 'TerminalNode' && child.symbol?.text) {
-         const text = child.symbol.text;
-         if (text && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(text) && text !== 'def' && text !== 'class' && text !== 'async') {
-           return text;
-         }
-       }
-     }
-     
-     return undefined;
-   }
+    if (!node || !node.children) return undefined;
+
+    // Look for NAME tokens in the children
+    for (const child of node.children) {
+      if (child.constructor?.name === "TerminalNode" && child.symbol?.text) {
+        const text = child.symbol.text;
+        if (
+          text &&
+          /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(text) &&
+          text !== "def" &&
+          text !== "class" &&
+          text !== "async"
+        ) {
+          return text;
+        }
+      }
+    }
+
+    return undefined;
+  }
 
   private extractPythonTypeAnnotation(annotation: any): string {
-    if (!annotation) return 'Any';
-    
+    if (!annotation) return "Any";
+
     switch (annotation._type || annotation.type) {
-      case 'Name':
+      case "Name":
         return annotation.id;
-      case 'Constant':
+      case "Constant":
         return String(annotation.value);
-      case 'Attribute':
+      case "Attribute":
         return `${this.extractPythonTypeAnnotation(annotation.value)}.${annotation.attr}`;
-      case 'Subscript':
+      case "Subscript":
         const base = this.extractPythonTypeAnnotation(annotation.value);
         const slice = this.extractPythonTypeAnnotation(annotation.slice);
         return `${base}[${slice}]`;
-      case 'Tuple':
+      case "Tuple":
         if (annotation.elts) {
-          const types = annotation.elts.map((elt: any) => this.extractPythonTypeAnnotation(elt));
-          return `Tuple[${types.join(', ')}]`;
+          const types = annotation.elts.map((elt: any) =>
+            this.extractPythonTypeAnnotation(elt),
+          );
+          return `Tuple[${types.join(", ")}]`;
         }
-        return 'Tuple';
-      case 'List':
+        return "Tuple";
+      case "List":
         if (annotation.elts && annotation.elts.length > 0) {
-          const elementType = this.extractPythonTypeAnnotation(annotation.elts[0]);
+          const elementType = this.extractPythonTypeAnnotation(
+            annotation.elts[0],
+          );
           return `List[${elementType}]`;
         }
-        return 'List';
+        return "List";
       default:
-        return 'Any';
+        return "Any";
     }
   }
 
@@ -365,55 +425,60 @@ export class ASTParser {
         loc: {
           start: {
             line: tsNode.startPosition.row + 1,
-            column: tsNode.startPosition.column
+            column: tsNode.startPosition.column,
           },
           end: {
             line: tsNode.endPosition.row + 1,
-            column: tsNode.endPosition.column
-          }
+            column: tsNode.endPosition.column,
+          },
         },
         children: [],
-        value: tsNode.text || sourceCode.slice(tsNode.startIndex, tsNode.endIndex)
+        value:
+          tsNode.text || sourceCode.slice(tsNode.startIndex, tsNode.endIndex),
       };
 
       // Map Go-specific node types to generic types
       switch (tsNode.type) {
-        case 'function_declaration':
-          genericNode.type = 'FunctionDef';
-          genericNode.name = this.extractGoIdentifier(tsNode, 'identifier') || 'anonymous';
+        case "function_declaration":
+          genericNode.type = "FunctionDef";
+          genericNode.name =
+            this.extractGoIdentifier(tsNode, "identifier") || "anonymous";
           break;
-        case 'method_declaration':
-          genericNode.type = 'MethodDef';
-          genericNode.name = this.extractGoIdentifier(tsNode, 'field_identifier') || 'anonymous';
+        case "method_declaration":
+          genericNode.type = "MethodDef";
+          genericNode.name =
+            this.extractGoIdentifier(tsNode, "field_identifier") || "anonymous";
           break;
-        case 'type_declaration':
-          genericNode.type = 'TypeDef';
-          genericNode.name = this.extractGoIdentifier(tsNode, 'type_identifier') || 'anonymous';
+        case "type_declaration":
+          genericNode.type = "TypeDef";
+          genericNode.name =
+            this.extractGoIdentifier(tsNode, "type_identifier") || "anonymous";
           break;
-        case 'interface_type':
-          genericNode.type = 'InterfaceDef';
+        case "interface_type":
+          genericNode.type = "InterfaceDef";
           break;
-        case 'struct_type':
-          genericNode.type = 'StructDef';
+        case "struct_type":
+          genericNode.type = "StructDef";
           break;
-        case 'import_declaration':
-          genericNode.type = 'Import';
+        case "import_declaration":
+          genericNode.type = "Import";
           break;
-        case 'package_clause':
-          genericNode.type = 'Package';
-          genericNode.name = this.extractGoIdentifier(tsNode, 'package_identifier') || 'main';
+        case "package_clause":
+          genericNode.type = "Package";
+          genericNode.name =
+            this.extractGoIdentifier(tsNode, "package_identifier") || "main";
           break;
-        case 'var_declaration':
-          genericNode.type = 'VarDef';
+        case "var_declaration":
+          genericNode.type = "VarDef";
           break;
-        case 'const_declaration':
-          genericNode.type = 'ConstDef';
+        case "const_declaration":
+          genericNode.type = "ConstDef";
           break;
-        case 'go_statement':
-          genericNode.type = 'GoStatement';
+        case "go_statement":
+          genericNode.type = "GoStatement";
           break;
-        case 'channel_type':
-          genericNode.type = 'ChannelType';
+        case "channel_type":
+          genericNode.type = "ChannelType";
           break;
         default:
           // Keep original type for other nodes
@@ -422,7 +487,9 @@ export class ASTParser {
 
       // Convert children recursively
       if (tsNode.children && tsNode.children.length > 0) {
-        genericNode.children = tsNode.children.map((child: any) => convertNode(child));
+        genericNode.children = tsNode.children.map((child: any) =>
+          convertNode(child),
+        );
       }
 
       return genericNode;
@@ -431,9 +498,12 @@ export class ASTParser {
     return convertNode(node);
   }
 
-  private extractGoIdentifier(node: any, identifierType: string): string | undefined {
+  private extractGoIdentifier(
+    node: any,
+    identifierType: string,
+  ): string | undefined {
     if (!node.children) return undefined;
-    
+
     for (const child of node.children) {
       if (child.type === identifierType) {
         return child.text;
@@ -442,7 +512,7 @@ export class ASTParser {
       const found = this.extractGoIdentifier(child, identifierType);
       if (found) return found;
     }
-    
+
     return undefined;
   }
 
@@ -455,67 +525,88 @@ export class ASTParser {
         loc: {
           start: {
             line: tsNode.startPosition.row + 1,
-            column: tsNode.startPosition.column
+            column: tsNode.startPosition.column,
           },
           end: {
             line: tsNode.endPosition.row + 1,
-            column: tsNode.endPosition.column
-          }
+            column: tsNode.endPosition.column,
+          },
         },
         children: [],
-        value: tsNode.text || sourceCode.slice(tsNode.startIndex, tsNode.endIndex)
+        value:
+          tsNode.text || sourceCode.slice(tsNode.startIndex, tsNode.endIndex),
       };
 
       // Map Rust-specific node types to generic types
       switch (tsNode.type) {
-        case 'function_item':
-          genericNode.type = 'FunctionItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'identifier', sourceCode) || 'anonymous';
+        case "function_item":
+          genericNode.type = "FunctionItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'impl_item':
-          genericNode.type = 'ImplItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'type_identifier', sourceCode) || 'anonymous';
+        case "impl_item":
+          genericNode.type = "ImplItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "type_identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'trait_item':
-          genericNode.type = 'TraitItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'type_identifier', sourceCode) || 'anonymous';
+        case "trait_item":
+          genericNode.type = "TraitItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "type_identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'struct_item':
-          genericNode.type = 'StructItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'type_identifier', sourceCode) || 'anonymous';
+        case "struct_item":
+          genericNode.type = "StructItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "type_identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'enum_item':
-          genericNode.type = 'EnumItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'type_identifier', sourceCode) || 'anonymous';
+        case "enum_item":
+          genericNode.type = "EnumItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "type_identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'mod_item':
-          genericNode.type = 'ModItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'identifier', sourceCode) || 'anonymous';
+        case "mod_item":
+          genericNode.type = "ModItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'use_declaration':
-          genericNode.type = 'UseDeclaration';
+        case "use_declaration":
+          genericNode.type = "UseDeclaration";
           break;
-        case 'const_item':
-          genericNode.type = 'ConstItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'identifier', sourceCode) || 'anonymous';
+        case "const_item":
+          genericNode.type = "ConstItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'static_item':
-          genericNode.type = 'StaticItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'identifier', sourceCode) || 'anonymous';
+        case "static_item":
+          genericNode.type = "StaticItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'type_item':
-          genericNode.type = 'TypeItem';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'type_identifier', sourceCode) || 'anonymous';
+        case "type_item":
+          genericNode.type = "TypeItem";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "type_identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'macro_definition':
-          genericNode.type = 'MacroDefinition';
-          genericNode.name = this.extractRustIdentifier(tsNode, 'identifier', sourceCode) || 'anonymous';
+        case "macro_definition":
+          genericNode.type = "MacroDefinition";
+          genericNode.name =
+            this.extractRustIdentifier(tsNode, "identifier", sourceCode) ||
+            "anonymous";
           break;
-        case 'let_declaration':
-          genericNode.type = 'LetDeclaration';
+        case "let_declaration":
+          genericNode.type = "LetDeclaration";
           break;
-        case 'lifetime':
-          genericNode.type = 'Lifetime';
+        case "lifetime":
+          genericNode.type = "Lifetime";
           break;
         default:
           // Keep original type for other nodes
@@ -524,7 +615,9 @@ export class ASTParser {
 
       // Convert children recursively
       if (tsNode.children && tsNode.children.length > 0) {
-        genericNode.children = tsNode.children.map((child: any) => convertNode(child));
+        genericNode.children = tsNode.children.map((child: any) =>
+          convertNode(child),
+        );
       }
 
       return genericNode;
@@ -533,18 +626,31 @@ export class ASTParser {
     return convertNode(node);
   }
 
-  private extractRustIdentifier(node: any, identifierType: string, sourceCode?: string): string | undefined {
+  private extractRustIdentifier(
+    node: any,
+    identifierType: string,
+    sourceCode?: string,
+  ): string | undefined {
     if (!node.children) return undefined;
-    
+
     for (const child of node.children) {
       if (child.type === identifierType) {
-        return child.text || (sourceCode ? sourceCode.slice(child.startIndex, child.endIndex) : undefined);
+        return (
+          child.text ||
+          (sourceCode
+            ? sourceCode.slice(child.startIndex, child.endIndex)
+            : undefined)
+        );
       }
       // Recursively search in children
-      const found = this.extractRustIdentifier(child, identifierType, sourceCode);
+      const found = this.extractRustIdentifier(
+        child,
+        identifierType,
+        sourceCode,
+      );
       if (found) return found;
     }
-    
+
     return undefined;
   }
 
@@ -556,56 +662,59 @@ export class ASTParser {
         end: node.end || 0,
         loc: node.loc,
       };
-      
+
       if (node.name) {
         genericNode.name = node.name;
       }
-      
+
       if (node.id && node.id.name) {
         genericNode.name = node.id.name;
       }
-      
+
       if (node.key && node.key.name) {
         genericNode.name = node.key.name;
       }
-      
+
       // Convert children
       const children: ASTNode[] = [];
       for (const key in node) {
         const value = node[key];
         if (Array.isArray(value)) {
           for (const item of value) {
-            if (item && typeof item === 'object' && item.type) {
+            if (item && typeof item === "object" && item.type) {
               children.push(convert(item));
             }
           }
-        } else if (value && typeof value === 'object' && value.type) {
+        } else if (value && typeof value === "object" && value.type) {
           children.push(convert(value));
         }
       }
-      
+
       if (children.length > 0) {
         genericNode.children = children;
       }
-      
+
       return genericNode;
     };
-    
+
     return convert(babelAst);
   }
 
   public extractSymbols(ast: ASTNode): SymbolInfo[] {
     const symbols: SymbolInfo[] = [];
-    
-    const traverse = (node: ASTNode, scope: 'global' | 'module' | 'local' = 'global') => {
+
+    const traverse = (
+      node: ASTNode,
+      scope: "global" | "module" | "local" = "global",
+    ) => {
       switch (node.type) {
-        case 'FunctionDeclaration':
-        case 'FunctionExpression':
-        case 'ArrowFunctionExpression':
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "ArrowFunctionExpression":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'function',
+              type: "function",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -614,12 +723,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'ClassDeclaration':
+
+        case "ClassDeclaration":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'class',
+              type: "class",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -628,12 +737,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'VariableDeclarator':
+
+        case "VariableDeclarator":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'variable',
+              type: "variable",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -642,13 +751,14 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'TSInterfaceDeclaration':
-        case 'TSTypeAliasDeclaration':
+
+        case "TSInterfaceDeclaration":
+        case "TSTypeAliasDeclaration":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: node.type === 'TSInterfaceDeclaration' ? 'interface' : 'type',
+              type:
+                node.type === "TSInterfaceDeclaration" ? "interface" : "type",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -657,16 +767,16 @@ export class ASTParser {
             });
           }
           break;
-          
+
         // Python-specific node types
-        case 'FunctionDef':
-        case 'AsyncFunctionDef':
+        case "FunctionDef":
+        case "AsyncFunctionDef":
           if (node.name) {
-            const isAsync = node.type === 'AsyncFunctionDef';
+            const isAsync = node.type === "AsyncFunctionDef";
             const decorators = node.metadata?.decorators || [];
             const metadata: any = {
               isAsync,
-              decorators
+              decorators,
             };
             if (node.metadata?.parameters) {
               metadata.parameters = node.metadata.parameters;
@@ -676,21 +786,21 @@ export class ASTParser {
             }
             symbols.push({
               name: node.name,
-              type: 'function',
+              type: "function",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
               exports: this.isExported(node),
               scope,
-              metadata
+              metadata,
             });
           }
           break;
-          
-        case 'ClassDef':
+
+        case "ClassDef":
           if (node.name) {
-            const decorators = node.metadata?.['decorators'] || [];
-            const baseClasses = node.metadata?.['baseClasses'] || [];
+            const decorators = node.metadata?.["decorators"] || [];
+            const baseClasses = node.metadata?.["baseClasses"] || [];
             const metadata: any = {};
             if (decorators.length > 0) {
               metadata.decorators = decorators;
@@ -700,69 +810,69 @@ export class ASTParser {
             }
             symbols.push({
               name: node.name,
-              type: 'class',
+              type: "class",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
               exports: this.isExported(node),
               scope,
-              ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+              ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
             });
           }
           break;
-          
-        case 'Assign':
+
+        case "Assign":
           // Handle Python variable assignments
-          if (node.metadata?.['targets']) {
-            for (const target of node.metadata['targets']) {
-              if (typeof target === 'string') {
+          if (node.metadata?.["targets"]) {
+            for (const target of node.metadata["targets"]) {
+              if (typeof target === "string") {
                 const metadata: any = {};
-                if (node.metadata['value'] !== undefined) {
-                  metadata.value = node.metadata['value'];
+                if (node.metadata["value"] !== undefined) {
+                  metadata.value = node.metadata["value"];
                 }
                 symbols.push({
                   name: target,
-                  type: 'variable',
+                  type: "variable",
                   startLine: node.loc?.start.line || 0,
                   endLine: node.loc?.end.line || 0,
                   dependencies: this.extractNodeDependencies(node),
                   exports: this.isExported(node),
                   scope,
-                  ...(Object.keys(metadata).length > 0 ? { metadata } : {})
+                  ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
                 });
               }
             }
           }
           break;
-          
-        case 'AnnAssign':
+
+        case "AnnAssign":
           // Handle Python annotated assignments (type hints)
-          if (node.metadata?.['target'] && node.metadata?.['annotation']) {
+          if (node.metadata?.["target"] && node.metadata?.["annotation"]) {
             const metadata: any = {
-              typeAnnotation: node.metadata['annotation']
+              typeAnnotation: node.metadata["annotation"],
             };
-            if (node.metadata['value'] !== undefined) {
-              metadata.value = node.metadata['value'];
+            if (node.metadata["value"] !== undefined) {
+              metadata.value = node.metadata["value"];
             }
             symbols.push({
-              name: node.metadata['target'],
-              type: 'variable',
+              name: node.metadata["target"],
+              type: "variable",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
               exports: this.isExported(node),
               scope,
-              metadata
+              metadata,
             });
           }
           break;
-          
+
         // Go-specific node types
-        case 'FunctionDef':
+        case "FunctionDef":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'function',
+              type: "function",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -771,12 +881,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'MethodDef':
+
+        case "MethodDef":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'method',
+              type: "method",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -785,12 +895,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'TypeDef':
+
+        case "TypeDef":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'type',
+              type: "type",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -799,12 +909,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'InterfaceDef':
+
+        case "InterfaceDef":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'interface',
+              type: "interface",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -813,12 +923,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'StructDef':
+
+        case "StructDef":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'struct',
+              type: "struct",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -827,13 +937,13 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'VarDef':
-        case 'ConstDef':
+
+        case "VarDef":
+        case "ConstDef":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: node.type === 'ConstDef' ? 'constant' : 'variable',
+              type: node.type === "ConstDef" ? "constant" : "variable",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -842,27 +952,27 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'Package':
+
+        case "Package":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'package',
+              type: "package",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
               exports: this.isExported(node),
-              scope: 'module',
+              scope: "module",
             });
           }
           break;
-          
+
         // Rust-specific node types
-        case 'FunctionItem':
+        case "FunctionItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'function',
+              type: "function",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -871,12 +981,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'StructItem':
+
+        case "StructItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'struct',
+              type: "struct",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -885,12 +995,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'TraitItem':
+
+        case "TraitItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'trait',
+              type: "trait",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -899,12 +1009,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'ImplItem':
+
+        case "ImplItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'impl',
+              type: "impl",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -913,12 +1023,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'EnumItem':
+
+        case "EnumItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'enum',
+              type: "enum",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -927,41 +1037,27 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'ModItem':
+
+        case "ModItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'module',
+              type: "module",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
               exports: this.isExported(node),
-              scope: 'module',
+              scope: "module",
             });
           }
           break;
-          
-        case 'ConstItem':
-        case 'StaticItem':
+
+        case "ConstItem":
+        case "StaticItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: node.type === 'StaticItem' ? 'static' : 'constant',
-              startLine: node.loc?.start.line || 0,
-              endLine: node.loc?.end.line || 0,
-              dependencies: this.extractNodeDependencies(node),
-              exports: this.isExported(node),
-              scope,
-            });
-          }
-          break;
-          
-        case 'TypeItem':
-          if (node.name) {
-            symbols.push({
-              name: node.name,
-              type: 'type',
+              type: node.type === "StaticItem" ? "static" : "constant",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -970,12 +1066,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'MacroDefinition':
+
+        case "TypeItem":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'macro',
+              type: "type",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -984,12 +1080,12 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'LetDeclaration':
+
+        case "MacroDefinition":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'variable',
+              type: "macro",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -998,12 +1094,26 @@ export class ASTParser {
             });
           }
           break;
-          
-        case 'Lifetime':
+
+        case "LetDeclaration":
           if (node.name) {
             symbols.push({
               name: node.name,
-              type: 'lifetime',
+              type: "variable",
+              startLine: node.loc?.start.line || 0,
+              endLine: node.loc?.end.line || 0,
+              dependencies: this.extractNodeDependencies(node),
+              exports: this.isExported(node),
+              scope,
+            });
+          }
+          break;
+
+        case "Lifetime":
+          if (node.name) {
+            symbols.push({
+              name: node.name,
+              type: "lifetime",
               startLine: node.loc?.start.line || 0,
               endLine: node.loc?.end.line || 0,
               dependencies: this.extractNodeDependencies(node),
@@ -1013,7 +1123,7 @@ export class ASTParser {
           }
           break;
       }
-      
+
       // Recursively traverse children
       if (node.children) {
         for (const child of node.children) {
@@ -1021,34 +1131,43 @@ export class ASTParser {
         }
       }
     };
-    
+
     traverse(ast);
     return symbols;
   }
 
-  private extractDependencies(ast: ASTNode, symbols: SymbolInfo[]): Map<string, Set<string>> {
+  private extractDependencies(
+    ast: ASTNode,
+    symbols: SymbolInfo[],
+  ): Map<string, Set<string>> {
     const dependencies = new Map<string, Set<string>>();
-    
+
     // Initialize dependency sets for all symbols
     for (const symbol of symbols) {
       dependencies.set(symbol.name, new Set());
     }
-    
+
     // Analyze dependencies between symbols
-    const symbolNames = new Set(symbols.map(s => s.name));
-    
+    const symbolNames = new Set(symbols.map((s) => s.name));
+
     const findDependencies = (node: ASTNode, currentSymbol?: string) => {
-      if (node.type === 'Identifier' && node.name && symbolNames.has(node.name) && currentSymbol && node.name !== currentSymbol) {
+      if (
+        node.type === "Identifier" &&
+        node.name &&
+        symbolNames.has(node.name) &&
+        currentSymbol &&
+        node.name !== currentSymbol
+      ) {
         dependencies.get(currentSymbol)?.add(node.name);
       }
-      
+
       if (node.children) {
         for (const child of node.children) {
           findDependencies(child, currentSymbol);
         }
       }
     };
-    
+
     // Find dependencies for each symbol
     for (const symbol of symbols) {
       const symbolNode = this.findSymbolNode(ast, symbol.name);
@@ -1056,72 +1175,82 @@ export class ASTParser {
         findDependencies(symbolNode, symbol.name);
       }
     }
-    
+
     return dependencies;
   }
 
   private extractImports(ast: ASTNode): string[] {
     const imports: string[] = [];
-    
+
     const traverse = (node: ASTNode) => {
-      if (node.type === 'ImportDeclaration') {
+      if (node.type === "ImportDeclaration") {
         // Extract import statement
         imports.push(this.reconstructImportStatement(node));
       }
-      
+
       if (node.children) {
         for (const child of node.children) {
           traverse(child);
         }
       }
     };
-    
+
     traverse(ast);
     return imports;
   }
 
   private extractExports(ast: ASTNode): string[] {
     const exports: string[] = [];
-    
+
     const traverse = (node: ASTNode) => {
-      if (node.type === 'ExportNamedDeclaration' || node.type === 'ExportDefaultDeclaration') {
+      if (
+        node.type === "ExportNamedDeclaration" ||
+        node.type === "ExportDefaultDeclaration"
+      ) {
         exports.push(this.reconstructExportStatement(node));
       }
-      
+
       if (node.children) {
         for (const child of node.children) {
           traverse(child);
         }
       }
     };
-    
+
     traverse(ast);
     return exports;
   }
 
-  private filterRelevantSymbols(symbols: SymbolInfo[], targetSymbols: string[], dependencies: Map<string, Set<string>>): SymbolInfo[] {
+  private filterRelevantSymbols(
+    symbols: SymbolInfo[],
+    targetSymbols: string[],
+    dependencies: Map<string, Set<string>>,
+  ): SymbolInfo[] {
     const relevant = new Set<string>();
     const toProcess = [...targetSymbols];
-    
+
     // Add target symbols and their dependencies
     while (toProcess.length > 0) {
       const symbol = toProcess.pop()!;
       if (relevant.has(symbol)) continue;
-      
+
       relevant.add(symbol);
       const deps = dependencies.get(symbol);
       if (deps) {
         toProcess.push(...Array.from(deps));
       }
     }
-    
-    return symbols.filter(symbol => relevant.has(symbol.name));
+
+    return symbols.filter((symbol) => relevant.has(symbol.name));
   }
 
-  private generateMinimalCode(ast: ASTNode, relevantSymbols: SymbolInfo[]): string {
+  private generateMinimalCode(
+    ast: ASTNode,
+    relevantSymbols: SymbolInfo[],
+  ): string {
     // const relevantNames = new Set(relevantSymbols.map(s => s.name));
     const codeLines: string[] = [];
-    
+
     // Extract code for relevant symbols
     for (const symbol of relevantSymbols) {
       const symbolNode = this.findSymbolNode(ast, symbol.name);
@@ -1130,25 +1259,25 @@ export class ASTParser {
         codeLines.push(code);
       }
     }
-    
-    return codeLines.join('\n\n');
+
+    return codeLines.join("\n\n");
   }
 
   private extractNodeDependencies(node: ASTNode): string[] {
     const dependencies: string[] = [];
-    
+
     const traverse = (n: ASTNode) => {
-      if (n.type === 'Identifier' && n.name) {
+      if (n.type === "Identifier" && n.name) {
         dependencies.push(n.name);
       }
-      
+
       if (n.children) {
         for (const child of n.children) {
           traverse(child);
         }
       }
     };
-    
+
     traverse(node);
     return Array.from(new Set(dependencies));
   }
@@ -1164,35 +1293,35 @@ export class ASTParser {
       if (node.name === symbolName) {
         return node;
       }
-      
+
       if (node.children) {
         for (const child of node.children) {
           const result = traverse(child);
           if (result) return result;
         }
       }
-      
+
       return null;
     };
-    
+
     return traverse(ast);
   }
 
   private reconstructImportStatement(node: ASTNode): string {
     // Reconstruct import statement from AST node
     // This is a simplified implementation
-    return `// Import statement for ${node.name || 'unknown'}`;
+    return `// Import statement for ${node.name || "unknown"}`;
   }
 
   private reconstructExportStatement(node: ASTNode): string {
     // Reconstruct export statement from AST node
     // This is a simplified implementation
-    return `// Export statement for ${node.name || 'unknown'}`;
+    return `// Export statement for ${node.name || "unknown"}`;
   }
 
   private extractNodeCode(node: ASTNode): string {
     // Extract the actual code for a node
     // This would need access to the original source code
-    return `// Code for ${node.name || 'unknown'} (${node.type})`;
+    return `// Code for ${node.name || "unknown"} (${node.type})`;
   }
 }

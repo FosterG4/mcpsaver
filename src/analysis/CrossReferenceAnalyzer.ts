@@ -1,16 +1,19 @@
-import * as path from 'path';
-import type { SymbolInfo } from '../types/index.js';
-import type { SemanticContext, SymbolRelationship } from './SemanticAnalyzer.js';
-import type { DependencyGraph, FileNode } from './DependencyTracker.js';
-import { SemanticAnalyzer } from './SemanticAnalyzer.js';
-import { DependencyTracker } from './DependencyTracker.js';
+import * as path from "path";
+import type { SymbolInfo } from "../types/index.js";
+import type {
+  SemanticContext,
+  SymbolRelationship,
+} from "./SemanticAnalyzer.js";
+import type { DependencyGraph, FileNode } from "./DependencyTracker.js";
+import { SemanticAnalyzer } from "./SemanticAnalyzer.js";
+import { DependencyTracker } from "./DependencyTracker.js";
 
 export interface SymbolReference {
   symbol: string;
   file: string;
   line: number;
   column: number;
-  type: 'definition' | 'usage' | 'modification' | 'call' | 'import' | 'export';
+  type: "definition" | "usage" | "modification" | "call" | "import" | "export";
   context: string; // Surrounding code context
   scope: string; // Function/class/module scope
 }
@@ -56,11 +59,16 @@ export interface DeadCodeAnalysis {
 }
 
 export interface RefactoringOpportunity {
-  type: 'extract_method' | 'inline_method' | 'move_method' | 'rename_symbol' | 'remove_unused';
+  type:
+    | "extract_method"
+    | "inline_method"
+    | "move_method"
+    | "rename_symbol"
+    | "remove_unused";
   symbol: string;
   file: string;
   description: string;
-  impact: 'low' | 'medium' | 'high';
+  impact: "low" | "medium" | "high";
   effort: number; // Estimated hours
   benefits: string[];
   risks: string[];
@@ -91,7 +99,9 @@ export class CrossReferenceAnalyzer {
   /**
    * Analyze cross-references across multiple files
    */
-  async analyzeCrossReferences(filePaths: string[]): Promise<Map<string, CrossReference>> {
+  async analyzeCrossReferences(
+    filePaths: string[],
+  ): Promise<Map<string, CrossReference>> {
     // Reset analysis state
     this.crossReferences.clear();
     this.symbolReferences.clear();
@@ -114,7 +124,10 @@ export class CrossReferenceAnalyzer {
   /**
    * Find all references to a specific symbol
    */
-  async findSymbolReferences(symbol: string, filePaths: string[]): Promise<SymbolReference[]> {
+  async findSymbolReferences(
+    symbol: string,
+    filePaths: string[],
+  ): Promise<SymbolReference[]> {
     const references: SymbolReference[] = [];
 
     for (const filePath of filePaths) {
@@ -134,7 +147,7 @@ export class CrossReferenceAnalyzer {
 
     if (crossRef) {
       for (const reference of crossRef.references) {
-        if (reference.type === 'usage' || reference.type === 'call') {
+        if (reference.type === "usage" || reference.type === "call") {
           // Find the symbol that contains this reference
           const containingSymbol = this.findContainingSymbol(reference);
           if (containingSymbol && !dependents.includes(containingSymbol)) {
@@ -161,17 +174,17 @@ export class CrossReferenceAnalyzer {
     for (const [symbol, crossRef] of this.crossReferences) {
       const usageCount = crossRef.usageCount;
       totalReferences += usageCount;
-      
+
       symbolUsageCounts.push({ symbol, count: usageCount });
-      
+
       if (usageCount === 0) {
         unusedSymbols.push(symbol);
       }
-      
+
       if (crossRef.isPublicAPI) {
         publicAPIUsage.set(symbol, usageCount);
       }
-      
+
       if (crossRef.fileCount > 1) {
         crossFileUsage.set(symbol, crossRef.fileCount);
       }
@@ -179,8 +192,9 @@ export class CrossReferenceAnalyzer {
 
     // Sort by usage count
     symbolUsageCounts.sort((a, b) => b.count - a.count);
-    
-    const averageReferencesPerSymbol = totalSymbols > 0 ? totalReferences / totalSymbols : 0;
+
+    const averageReferencesPerSymbol =
+      totalSymbols > 0 ? totalReferences / totalSymbols : 0;
     const mostUsedSymbols = symbolUsageCounts.slice(0, 10);
     const leastUsedSymbols = symbolUsageCounts.slice(-10).reverse();
 
@@ -192,7 +206,7 @@ export class CrossReferenceAnalyzer {
       leastUsedSymbols,
       unusedSymbols,
       publicAPIUsage,
-      crossFileUsage
+      crossFileUsage,
     };
   }
 
@@ -204,7 +218,11 @@ export class CrossReferenceAnalyzer {
     const unusedClasses: string[] = [];
     const unusedVariables: string[] = [];
     const unusedImports: string[] = [];
-    const unreachableCode: Array<{ file: string; line: number; reason: string }> = [];
+    const unreachableCode: Array<{
+      file: string;
+      line: number;
+      reason: string;
+    }> = [];
     const potentialDeadCode: Array<{
       symbol: string;
       file: string;
@@ -216,16 +234,16 @@ export class CrossReferenceAnalyzer {
       if (crossRef.usageCount === 0) {
         // Categorize unused symbols by type
         const symbolInfo = this.getSymbolInfo(symbol, crossRef.definition.file);
-        
+
         if (symbolInfo) {
           switch (symbolInfo.type) {
-            case 'function':
+            case "function":
               unusedFunctions.push(symbol);
               break;
-            case 'class':
+            case "class":
               unusedClasses.push(symbol);
               break;
-            case 'variable':
+            case "variable":
               unusedVariables.push(symbol);
               break;
           }
@@ -235,8 +253,8 @@ export class CrossReferenceAnalyzer {
         potentialDeadCode.push({
           symbol,
           file: crossRef.definition.file,
-          reason: 'Only used once, consider inlining',
-          confidence: 0.7
+          reason: "Only used once, consider inlining",
+          confidence: 0.7,
         });
       }
     }
@@ -245,7 +263,7 @@ export class CrossReferenceAnalyzer {
     for (const [filePath, context] of this.fileContexts) {
       for (const [symbol, relationships] of context.relationships) {
         for (const rel of relationships) {
-          if (rel.type === 'imports') {
+          if (rel.type === "imports") {
             const crossRef = this.crossReferences.get(symbol);
             if (!crossRef || crossRef.usageCount === 0) {
               unusedImports.push(`${symbol} in ${filePath}`);
@@ -261,7 +279,7 @@ export class CrossReferenceAnalyzer {
       unusedVariables,
       unusedImports,
       unreachableCode,
-      potentialDeadCode
+      potentialDeadCode,
     };
   }
 
@@ -275,70 +293,70 @@ export class CrossReferenceAnalyzer {
       // Extract method opportunities
       if (crossRef.usageCount > 3 && this.isCodeDuplication(symbol)) {
         opportunities.push({
-          type: 'extract_method',
+          type: "extract_method",
           symbol,
           file: crossRef.definition.file,
           description: `Extract repeated code pattern into a reusable method`,
-          impact: 'medium',
+          impact: "medium",
           effort: 2,
-          benefits: ['Reduces code duplication', 'Improves maintainability'],
-          risks: ['May introduce additional complexity']
+          benefits: ["Reduces code duplication", "Improves maintainability"],
+          risks: ["May introduce additional complexity"],
         });
       }
 
       // Inline method opportunities
       if (crossRef.usageCount === 1 && this.isSimpleMethod(symbol)) {
         opportunities.push({
-          type: 'inline_method',
+          type: "inline_method",
           symbol,
           file: crossRef.definition.file,
           description: `Inline simple method that's only used once`,
-          impact: 'low',
+          impact: "low",
           effort: 0.5,
-          benefits: ['Reduces indirection', 'Simplifies code'],
-          risks: ['May reduce readability if method name is descriptive']
+          benefits: ["Reduces indirection", "Simplifies code"],
+          risks: ["May reduce readability if method name is descriptive"],
         });
       }
 
       // Remove unused opportunities
       if (crossRef.usageCount === 0 && !crossRef.isPublicAPI) {
         opportunities.push({
-          type: 'remove_unused',
+          type: "remove_unused",
           symbol,
           file: crossRef.definition.file,
           description: `Remove unused symbol`,
-          impact: 'low',
+          impact: "low",
           effort: 0.25,
-          benefits: ['Reduces code size', 'Improves clarity'],
-          risks: ['Symbol might be used by external code not analyzed']
+          benefits: ["Reduces code size", "Improves clarity"],
+          risks: ["Symbol might be used by external code not analyzed"],
         });
       }
 
       // Move method opportunities
       if (this.shouldMoveSymbol(symbol, crossRef)) {
         opportunities.push({
-          type: 'move_method',
+          type: "move_method",
           symbol,
           file: crossRef.definition.file,
           description: `Move method to class where it's most used`,
-          impact: 'medium',
+          impact: "medium",
           effort: 1.5,
-          benefits: ['Improves cohesion', 'Reduces coupling'],
-          risks: ['May break existing interfaces']
+          benefits: ["Improves cohesion", "Reduces coupling"],
+          risks: ["May break existing interfaces"],
         });
       }
 
       // Rename opportunities
       if (this.hasConfusingName(symbol)) {
         opportunities.push({
-          type: 'rename_symbol',
+          type: "rename_symbol",
           symbol,
           file: crossRef.definition.file,
           description: `Rename symbol to be more descriptive`,
-          impact: 'low',
+          impact: "low",
           effort: 1,
-          benefits: ['Improves code readability', 'Reduces confusion'],
-          risks: ['Requires updating all references']
+          benefits: ["Improves code readability", "Reduces confusion"],
+          risks: ["Requires updating all references"],
         });
       }
     }
@@ -362,16 +380,21 @@ export class CrossReferenceAnalyzer {
       const usageFrequency = crossRef.usageCount;
       const changeFrequency = this.calculateChangeFrequency(symbol);
       const complexity = this.calculateSymbolComplexity(symbol);
-      
+
       // Calculate risk score
-      const riskScore = this.calculateRiskScore(usageFrequency, changeFrequency, complexity);
-      
-      if (riskScore > 0.7) { // High risk threshold
+      const riskScore = this.calculateRiskScore(
+        usageFrequency,
+        changeFrequency,
+        complexity,
+      );
+
+      if (riskScore > 0.7) {
+        // High risk threshold
         const recommendations = this.generateRecommendations(symbol, crossRef, {
           usageFrequency,
           changeFrequency,
           complexity,
-          riskScore
+          riskScore,
         });
 
         hotspots.push({
@@ -381,7 +404,7 @@ export class CrossReferenceAnalyzer {
           usageFrequency,
           complexity,
           riskScore,
-          recommendations
+          recommendations,
         });
       }
     }
@@ -404,17 +427,17 @@ export class CrossReferenceAnalyzer {
       deadCode: this.analyzeDeadCode(),
       refactoringOpportunities: this.identifyRefactoringOpportunities(),
       hotspots: this.identifySymbolHotspots(),
-      crossReferences: this.crossReferences
+      crossReferences: this.crossReferences,
     };
   }
 
   private async analyzeFileReferences(filePath: string): Promise<void> {
     const absolutePath = path.resolve(filePath);
-    
+
     try {
       const context = await this.semanticAnalyzer.analyzeFile(absolutePath);
       this.fileContexts.set(absolutePath, context);
-      
+
       // Extract symbol references from the context
       await this.extractSymbolReferences(absolutePath, context);
     } catch (error) {
@@ -422,7 +445,10 @@ export class CrossReferenceAnalyzer {
     }
   }
 
-  private async extractSymbolReferences(filePath: string, context: SemanticContext): Promise<void> {
+  private async extractSymbolReferences(
+    filePath: string,
+    context: SemanticContext,
+  ): Promise<void> {
     const references: SymbolReference[] = [];
 
     // Extract definitions
@@ -432,11 +458,11 @@ export class CrossReferenceAnalyzer {
         file: filePath,
         line: symbolInfo.startLine || 0,
         column: 0, // Would need more detailed AST analysis
-        type: 'definition',
+        type: "definition",
         context: this.extractCodeContext(filePath, symbolInfo.startLine || 0),
-        scope: symbolInfo.scope || 'global'
+        scope: symbolInfo.scope || "global",
       };
-      
+
       references.push(reference);
     }
 
@@ -444,7 +470,7 @@ export class CrossReferenceAnalyzer {
     for (const [symbol, relationships] of context.relationships) {
       for (const rel of relationships) {
         const referenceType = this.mapRelationshipToReferenceType(rel.type);
-        
+
         if (referenceType) {
           const reference: SymbolReference = {
             symbol: rel.target,
@@ -453,9 +479,9 @@ export class CrossReferenceAnalyzer {
             column: 0,
             type: referenceType,
             context: this.extractCodeContext(filePath, rel.line || 0),
-            scope: rel.scope || 'unknown'
+            scope: rel.scope || "unknown",
           };
-          
+
           references.push(reference);
         }
       }
@@ -472,7 +498,7 @@ export class CrossReferenceAnalyzer {
     // Collect all definitions and usages
     for (const [filePath, references] of this.symbolReferences) {
       for (const reference of references) {
-        if (reference.type === 'definition') {
+        if (reference.type === "definition") {
           symbolDefinitions.set(reference.symbol, reference);
         } else {
           if (!symbolUsages.has(reference.symbol)) {
@@ -486,8 +512,8 @@ export class CrossReferenceAnalyzer {
     // Build cross-references
     for (const [symbol, definition] of symbolDefinitions) {
       const usages = symbolUsages.get(symbol) || [];
-      const fileSet = new Set([definition.file, ...usages.map(u => u.file)]);
-      
+      const fileSet = new Set([definition.file, ...usages.map((u) => u.file)]);
+
       const crossRef: CrossReference = {
         symbol,
         definition,
@@ -496,16 +522,19 @@ export class CrossReferenceAnalyzer {
         fileCount: fileSet.size,
         isPublicAPI: this.isPublicAPI(symbol, definition),
         isDeprecated: this.isDeprecated(symbol),
-        lastUsed: this.getLastUsageTime(usages)
+        lastUsed: this.getLastUsageTime(usages),
       };
-      
+
       this.crossReferences.set(symbol, crossRef);
     }
   }
 
-  private async findSymbolInFile(symbol: string, filePath: string): Promise<SymbolReference[]> {
+  private async findSymbolInFile(
+    symbol: string,
+    filePath: string,
+  ): Promise<SymbolReference[]> {
     const references = this.symbolReferences.get(path.resolve(filePath)) || [];
-    return references.filter(ref => ref.symbol === symbol);
+    return references.filter((ref) => ref.symbol === symbol);
   }
 
   private findContainingSymbol(reference: SymbolReference): string | null {
@@ -514,9 +543,12 @@ export class CrossReferenceAnalyzer {
 
     // Find the symbol that contains this reference line
     for (const [symbol, symbolInfo] of context.symbols) {
-      if (symbolInfo.startLine && symbolInfo.endLine &&
-          reference.line >= symbolInfo.startLine &&
-          reference.line <= symbolInfo.endLine) {
+      if (
+        symbolInfo.startLine &&
+        symbolInfo.endLine &&
+        reference.line >= symbolInfo.startLine &&
+        reference.line <= symbolInfo.endLine
+      ) {
         return symbol;
       }
     }
@@ -535,14 +567,22 @@ export class CrossReferenceAnalyzer {
     return `Line ${line} in ${path.basename(filePath)}`;
   }
 
-  private mapRelationshipToReferenceType(relType: string): SymbolReference['type'] | null {
+  private mapRelationshipToReferenceType(
+    relType: string,
+  ): SymbolReference["type"] | null {
     switch (relType) {
-      case 'calls': return 'call';
-      case 'uses': return 'usage';
-      case 'modifies': return 'modification';
-      case 'imports': return 'import';
-      case 'exports': return 'export';
-      default: return null;
+      case "calls":
+        return "call";
+      case "uses":
+        return "usage";
+      case "modifies":
+        return "modification";
+      case "imports":
+        return "import";
+      case "exports":
+        return "export";
+      default:
+        return null;
     }
   }
 
@@ -550,7 +590,7 @@ export class CrossReferenceAnalyzer {
     // Check if symbol is exported or part of public API
     const context = this.fileContexts.get(definition.file);
     if (!context) return false;
-    
+
     const symbolInfo = context.symbols.get(symbol);
     return symbolInfo?.exports === true;
   }
@@ -558,7 +598,7 @@ export class CrossReferenceAnalyzer {
   private isDeprecated(symbol: string): boolean {
     // Check for deprecation markers in comments or annotations
     // This would require more detailed AST analysis
-    return symbol.includes('deprecated') || symbol.includes('legacy');
+    return symbol.includes("deprecated") || symbol.includes("legacy");
   }
 
   private getLastUsageTime(usages: SymbolReference[]): number {
@@ -577,10 +617,10 @@ export class CrossReferenceAnalyzer {
     // Check if method is simple enough to inline
     const crossRef = this.crossReferences.get(symbol);
     if (!crossRef) return false;
-    
+
     const symbolInfo = this.getSymbolInfo(symbol, crossRef.definition.file);
-    if (!symbolInfo || symbolInfo.type !== 'function') return false;
-    
+    if (!symbolInfo || symbolInfo.type !== "function") return false;
+
     // Simple heuristic: methods with few lines
     const lineCount = (symbolInfo.endLine || 0) - (symbolInfo.startLine || 0);
     return lineCount <= 5;
@@ -589,16 +629,17 @@ export class CrossReferenceAnalyzer {
   private shouldMoveSymbol(symbol: string, crossRef: CrossReference): boolean {
     // Analyze if symbol should be moved to a different class/file
     if (crossRef.fileCount <= 1) return false;
-    
+
     // Check if most usages are in a different file than definition
     const usagesByFile = new Map<string, number>();
     for (const ref of crossRef.references) {
       usagesByFile.set(ref.file, (usagesByFile.get(ref.file) || 0) + 1);
     }
-    
-    const maxUsageFile = Array.from(usagesByFile.entries())
-      .sort((a, b) => b[1] - a[1])[0];
-    
+
+    const maxUsageFile = Array.from(usagesByFile.entries()).sort(
+      (a, b) => b[1] - a[1],
+    )[0];
+
     return maxUsageFile && maxUsageFile[0] !== crossRef.definition.file;
   }
 
@@ -612,8 +653,8 @@ export class CrossReferenceAnalyzer {
       /^obj/, // Generic object variables
       /^val/, // Generic value variables
     ];
-    
-    return confusingPatterns.some(pattern => pattern.test(symbol));
+
+    return confusingPatterns.some((pattern) => pattern.test(symbol));
   }
 
   private calculateChangeFrequency(symbol: string): number {
@@ -625,32 +666,34 @@ export class CrossReferenceAnalyzer {
   private calculateSymbolComplexity(symbol: string): number {
     const crossRef = this.crossReferences.get(symbol);
     if (!crossRef) return 0;
-    
+
     const symbolInfo = this.getSymbolInfo(symbol, crossRef.definition.file);
     if (!symbolInfo) return 0;
-    
+
     // Simple complexity based on line count and dependencies
     const lineCount = (symbolInfo.endLine || 0) - (symbolInfo.startLine || 0);
     const dependencyCount = symbolInfo.dependencies?.length || 0;
-    
-    return Math.min((lineCount / 50) + (dependencyCount / 10), 1.0);
+
+    return Math.min(lineCount / 50 + dependencyCount / 10, 1.0);
   }
 
   private calculateRiskScore(
     usageFrequency: number,
     changeFrequency: number,
-    complexity: number
+    complexity: number,
   ): number {
     // Weighted risk calculation
     const usageWeight = 0.3;
     const changeWeight = 0.4;
     const complexityWeight = 0.3;
-    
+
     const normalizedUsage = Math.min(usageFrequency / 100, 1.0);
-    
-    return (normalizedUsage * usageWeight) +
-           (changeFrequency * changeWeight) +
-           (complexity * complexityWeight);
+
+    return (
+      normalizedUsage * usageWeight +
+      changeFrequency * changeWeight +
+      complexity * complexityWeight
+    );
   }
 
   private generateRecommendations(
@@ -661,26 +704,30 @@ export class CrossReferenceAnalyzer {
       changeFrequency: number;
       complexity: number;
       riskScore: number;
-    }
+    },
   ): string[] {
     const recommendations: string[] = [];
-    
+
     if (metrics.complexity > 0.7) {
-      recommendations.push('Consider breaking down into smaller functions');
+      recommendations.push("Consider breaking down into smaller functions");
     }
-    
+
     if (metrics.changeFrequency > 0.8) {
-      recommendations.push('High change frequency - ensure good test coverage');
+      recommendations.push("High change frequency - ensure good test coverage");
     }
-    
+
     if (metrics.usageFrequency > 50) {
-      recommendations.push('Widely used symbol - changes require careful review');
+      recommendations.push(
+        "Widely used symbol - changes require careful review",
+      );
     }
-    
+
     if (crossRef.fileCount > 5) {
-      recommendations.push('Used across many files - consider interface stability');
+      recommendations.push(
+        "Used across many files - consider interface stability",
+      );
     }
-    
+
     return recommendations;
   }
 

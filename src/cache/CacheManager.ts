@@ -1,6 +1,11 @@
-import { LRUCache } from 'lru-cache';
-import type { CodeContext, CacheEntry, CacheStats, CacheEvictionPolicy, OptimizationConfig } from '../types/index.js';
-
+import { LRUCache } from "lru-cache";
+import type {
+  CodeContext,
+  CacheEntry,
+  CacheStats,
+  CacheEvictionPolicy,
+  OptimizationConfig,
+} from "../types/index.js";
 
 export class CacheManager {
   private cache: LRUCache<string, CodeContext>;
@@ -40,7 +45,7 @@ export class CacheManager {
 
     this.accessCounts = new Map();
     this.lastAccessed = new Map();
-    this.evictionPolicy = 'lru';
+    this.evictionPolicy = "lru";
   }
 
   /**
@@ -48,13 +53,13 @@ export class CacheManager {
    */
   async get(key: string): Promise<CodeContext | null> {
     const context = this.cache.get(key);
-    
+
     if (context) {
       this.recordHit(key);
       this.updateAccessStats(key);
       return context;
     }
-    
+
     this.recordMiss(key);
     return null;
   }
@@ -86,14 +91,14 @@ export class CacheManager {
    */
   async getByFilePath(filePath: string): Promise<CodeContext[]> {
     const results: CodeContext[] = [];
-    
+
     for (const [key, context] of this.cache.entries()) {
       if (context.filePath === filePath) {
         results.push(context);
         this.updateAccessStats(key);
       }
     }
-    
+
     return results.sort((a, b) => {
       // Sort by relevance score and recency
       const scoreA = a.relevanceScore * this.getRecencyWeight(a.timestamp);
@@ -107,19 +112,19 @@ export class CacheManager {
    */
   async invalidateFile(filePath: string): Promise<void> {
     const keysToDelete: string[] = [];
-    
+
     for (const [key, context] of this.cache.entries()) {
       if (context.filePath === filePath) {
         keysToDelete.push(key);
       }
     }
-    
+
     for (const key of keysToDelete) {
       this.cache.delete(key);
       this.accessCounts.delete(key);
       this.lastAccessed.delete(key);
     }
-    
+
     this.updateStats();
   }
 
@@ -143,19 +148,25 @@ export class CacheManager {
   /**
    * Get cache entries sorted by various criteria
    */
-  getEntriesByRelevance(): Array<{ key: string; context: CodeContext; score: number }> {
-    const entries: Array<{ key: string; context: CodeContext; score: number }> = [];
-    
+  getEntriesByRelevance(): Array<{
+    key: string;
+    context: CodeContext;
+    score: number;
+  }> {
+    const entries: Array<{ key: string; context: CodeContext; score: number }> =
+      [];
+
     for (const [key, context] of this.cache.entries()) {
       const accessCount = this.accessCounts.get(key) || 0;
       const lastAccess = this.lastAccessed.get(key) || 0;
       const recencyWeight = this.getRecencyWeight(lastAccess);
       const accessWeight = Math.log(accessCount + 1) / 10; // Logarithmic scaling
-      
-      const score = context.relevanceScore * 0.4 + recencyWeight * 0.3 + accessWeight * 0.3;
+
+      const score =
+        context.relevanceScore * 0.4 + recencyWeight * 0.3 + accessWeight * 0.3;
       entries.push({ key, context, score });
     }
-    
+
     return entries.sort((a, b) => b.score - a.score);
   }
 
@@ -169,23 +180,23 @@ export class CacheManager {
   }> {
     const initialSize = this.cache.size;
     const initialEntries = this.stats.totalEntries;
-    
+
     // Get entries sorted by relevance
     const entries = this.getEntriesByRelevance();
-    
+
     // Remove bottom 20% of entries if cache is getting full
     const cacheUtilization = this.stats.totalSize / this.config.maxCacheSize;
     if (cacheUtilization > 0.8) {
       const entriesToRemove = Math.floor(entries.length * 0.2);
       const lowValueEntries = entries.slice(-entriesToRemove);
-      
+
       for (const entry of lowValueEntries) {
         this.cache.delete(entry.key);
         this.accessCounts.delete(entry.key);
         this.lastAccessed.delete(entry.key);
       }
     }
-    
+
     // Apply custom eviction policies based on current policy
     for (const [key, context] of this.cache.entries()) {
       if (this.shouldEvictEntry(key, context)) {
@@ -194,9 +205,9 @@ export class CacheManager {
         this.lastAccessed.delete(key);
       }
     }
-    
+
     this.updateStats();
-    
+
     return {
       removedEntries: initialEntries - this.stats.totalEntries,
       spaceSaved: initialSize - this.cache.size,
@@ -206,10 +217,11 @@ export class CacheManager {
 
   private async ensureCapacity(requiredSize: number): Promise<void> {
     const availableSpace = this.config.maxCacheSize - this.stats.totalSize;
-    
+
     if (availableSpace < requiredSize) {
       // Need to free up space
-      const spaceToFree = requiredSize - availableSpace + (this.config.maxCacheSize * 0.1); // Free 10% extra
+      const spaceToFree =
+        requiredSize - availableSpace + this.config.maxCacheSize * 0.1; // Free 10% extra
       await this.freeSpace(spaceToFree);
     }
   }
@@ -217,18 +229,18 @@ export class CacheManager {
   private async freeSpace(targetSize: number): Promise<void> {
     let freedSpace = 0;
     const entries = this.getEntriesByRelevance();
-    
+
     // Remove lowest scoring entries first
     for (let i = entries.length - 1; i >= 0 && freedSpace < targetSize; i--) {
       const entry = entries[i];
       if (!entry) continue;
-      
+
       const entrySize = this.calculateEntrySize(entry.context);
-      
+
       this.cache.delete(entry.key);
       this.accessCounts.delete(entry.key);
       this.lastAccessed.delete(entry.key);
-      
+
       freedSpace += entrySize;
       this.stats.evictionCount++;
     }
@@ -236,27 +248,28 @@ export class CacheManager {
 
   private calculateEntrySize(context: CodeContext): number {
     const codeSize = context.extractedCode.length;
-    const importsSize = context.imports.join('').length;
+    const importsSize = context.imports.join("").length;
     const metadataSize = JSON.stringify({
       symbols: context.symbols,
       dependencies: context.dependencies,
     }).length;
-    
+
     return codeSize + importsSize + metadataSize;
   }
 
   private truncateContext(context: CodeContext): CodeContext {
-    const maxChars = this.config.maxTokensPerEntry * this.config.tokenEstimationRatio;
-    
+    const maxChars =
+      this.config.maxTokensPerEntry * this.config.tokenEstimationRatio;
+
     if (context.extractedCode.length <= maxChars) {
       return context;
     }
-    
+
     // Truncate while preserving structure
-    const lines = context.extractedCode.split('\n');
+    const lines = context.extractedCode.split("\n");
     const truncatedLines: string[] = [];
     let currentLength = 0;
-    
+
     for (const line of lines) {
       if (currentLength + line.length > maxChars) {
         break;
@@ -264,10 +277,10 @@ export class CacheManager {
       truncatedLines.push(line);
       currentLength += line.length + 1; // +1 for newline
     }
-    
+
     return {
       ...context,
-      extractedCode: truncatedLines.join('\n'),
+      extractedCode: truncatedLines.join("\n"),
       tokenCount: Math.ceil(currentLength / this.config.tokenEstimationRatio),
     };
   }
@@ -275,13 +288,15 @@ export class CacheManager {
   private recordHit(_key: string): void {
     // Update hit rate calculation
     const totalRequests = this.stats.hitRate + this.stats.missRate;
-    this.stats.hitRate = (this.stats.hitRate * totalRequests + 1) / (totalRequests + 1);
+    this.stats.hitRate =
+      (this.stats.hitRate * totalRequests + 1) / (totalRequests + 1);
   }
 
   private recordMiss(_key: string): void {
     // Update miss rate calculation
     const totalRequests = this.stats.hitRate + this.stats.missRate;
-    this.stats.missRate = (this.stats.missRate * totalRequests + 1) / (totalRequests + 1);
+    this.stats.missRate =
+      (this.stats.missRate * totalRequests + 1) / (totalRequests + 1);
   }
 
   private updateAccessStats(key: string): void {
@@ -298,7 +313,7 @@ export class CacheManager {
   private getRecencyWeight(timestamp: number): number {
     const ageMs = Date.now() - timestamp;
     const maxAge = this.config.cacheExpirationMs;
-    return Math.max(0, 1 - (ageMs / maxAge));
+    return Math.max(0, 1 - ageMs / maxAge);
   }
 
   private onEviction(_key: string, _context: CodeContext): void {
@@ -309,30 +324,35 @@ export class CacheManager {
   private shouldEvictEntry(key: string, context: CodeContext): boolean {
     const entry = this.createCacheEntry(key, context);
     const stats = this.getStats();
-    
+
     switch (this.evictionPolicy) {
-      case 'lru':
+      case "lru":
         return entry.lastAccessed < Date.now() - this.config.cacheExpirationMs;
-      case 'lfu':
-        const avgAccess = stats.totalEntries > 0 ? 
-          Array.from(this.accessCounts.values()).reduce((a, b) => a + b, 0) / stats.totalEntries : 0;
+      case "lfu":
+        const avgAccess =
+          stats.totalEntries > 0
+            ? Array.from(this.accessCounts.values()).reduce(
+                (a, b) => a + b,
+                0,
+              ) / stats.totalEntries
+            : 0;
         return entry.accessCount < avgAccess * 0.1;
-      case 'ttl':
+      case "ttl":
         const age = Date.now() - entry.lastAccessed;
         return age > this.config.cacheExpirationMs * 2;
-      case 'fifo':
+      case "fifo":
       default:
         return context.relevanceScore < this.config.relevanceThreshold * 0.5;
     }
   }
-  
+
   private createCacheEntry(key: string, context: CodeContext): CacheEntry {
     return {
       key,
       value: context,
       accessCount: this.accessCounts.get(key) || 0,
       lastAccessed: this.lastAccessed.get(key) || Date.now(),
-      size: this.calculateEntrySize(context)
+      size: this.calculateEntrySize(context),
     };
   }
 }

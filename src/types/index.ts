@@ -41,14 +41,14 @@ export interface ASTNode {
   metadata?: {
     // Python-specific metadata
     decorators?: string[];
-    parameters?: Array<{name: string, type?: string, default?: any}>;
+    parameters?: Array<{ name: string; type?: string; default?: any }>;
     returnType?: string;
     baseClasses?: string[];
     targets?: string[];
     value?: any;
     annotation?: string;
     target?: string;
-    
+
     // General metadata for language-specific features
     modifiers?: string[];
     generics?: string[];
@@ -66,7 +66,7 @@ export interface ExtractedContext {
 }
 
 export interface DiffChange {
-  type: 'added' | 'removed' | 'modified';
+  type: "added" | "removed" | "modified";
   oldStart?: number;
   oldEnd?: number;
   newStart?: number;
@@ -75,7 +75,7 @@ export interface DiffChange {
 }
 
 export interface SymbolChange {
-  type: 'added' | 'removed' | 'modified';
+  type: "added" | "removed" | "modified";
   symbol: string;
   code: string;
   lineNumber: number;
@@ -127,7 +127,30 @@ export interface OptimizationConfig {
 
 export interface FileLanguage {
   extension: string;
-  parser: 'typescript' | 'javascript' | 'python' | 'java' | 'csharp' | 'go' | 'rust';
+  parser:
+    | "typescript"
+    | "javascript"
+    | "python"
+    | "java"
+    | "csharp"
+    | "go"
+    | "rust"
+    | "json"
+    | "cpp"
+    | "c"
+    | "html"
+    | "css"
+    | "bash"
+    | "php"
+    | "ruby"
+    | "swift"
+    | "toml"
+    | "regex"
+    | "scala"
+    | "haskell"
+    | "ocaml"
+    | "ql"
+    | "julia";
   astParser?: string;
 }
 
@@ -143,23 +166,39 @@ export interface ParserResult {
 
 export interface SymbolInfo {
   name: string;
-  type: 'function' | 'class' | 'variable' | 'interface' | 'type' | 'enum' | 'constant' | 'method' | 'struct' | 'package' | 'trait' | 'impl' | 'module' | 'static' | 'macro' | 'lifetime';
+  type:
+    | "function"
+    | "class"
+    | "variable"
+    | "interface"
+    | "type"
+    | "enum"
+    | "constant"
+    | "method"
+    | "struct"
+    | "package"
+    | "trait"
+    | "impl"
+    | "module"
+    | "static"
+    | "macro"
+    | "lifetime";
   startLine: number;
   endLine: number;
   dependencies: string[];
   exports: boolean;
-  scope: 'global' | 'module' | 'local';
+  scope: "global" | "module" | "local";
   metadata?: {
     // Python-specific metadata
     isAsync?: boolean;
     decorators?: string[];
-    parameters?: Array<{name: string, type?: string, default?: any}>;
+    parameters?: Array<{ name: string; type?: string; default?: any }>;
     returnType?: string;
     baseClasses?: string[];
     typeAnnotation?: string;
     value?: any;
     targets?: string[];
-    
+
     // General metadata for future language support
     modifiers?: string[];
     generics?: string[];
@@ -184,11 +223,15 @@ export interface OptimizationResult {
   }>;
 }
 
-export type ContextExtractionStrategy = 'contextual' | 'minimal' | 'full' | 'smart';
+export type ContextExtractionStrategy =
+  | "contextual"
+  | "minimal"
+  | "full"
+  | "smart";
 
-export type CacheEvictionPolicy = 'lru' | 'lfu' | 'fifo' | 'ttl';
+export type CacheEvictionPolicy = "lru" | "lfu" | "fifo" | "ttl";
 
-export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogLevel = "debug" | "info" | "warn" | "error";
 
 export interface Logger {
   debug: (message: string, ...args: any[]) => void;

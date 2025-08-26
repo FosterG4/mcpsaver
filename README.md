@@ -139,3 +139,71 @@ npm publish --access public
 ## License
 
 MIT — see `LICENSE`.
+## Tree-sitter setup
+
+This project uses Tree-sitter for parsing. Grammars are loaded in this order:
+
+1) Local grammars from `TREE_SITTER_LOCAL_DIR` (default: `D:/project/tree-sitter`)
+2) Fallback to node_modules packages when available
+
+Supported keys and typical sources:
+- javascript: local `tree-sitter-javascript` or package `tree-sitter-javascript`
+- typescript/tsx: local `tree-sitter-typescript` or package `tree-sitter-typescript`
+- json, python, go, rust, c/cpp, csharp, java, html, css, bash, php, ruby, swift, toml, regex, scala, haskell, ocaml, ql, julia
+
+Local directory example layout (first entry found is used):
+```
+D:/project/tree-sitter/
+  tree-sitter-javascript/
+  tree-sitter-typescript/
+  tree-sitter-json/
+  ...
+```
+
+To rely on npm fallbacks (no local grammars), install:
+```bash
+npm i -D tree-sitter-javascript tree-sitter-typescript
+```
+
+At runtime you can override the directory:
+```bash
+set TREE_SITTER_LOCAL_DIR=D:/project/tree-sitter   # Windows (cmd)
+$env:TREE_SITTER_LOCAL_DIR='D:/project/tree-sitter' # Windows (PowerShell)
+export TREE_SITTER_LOCAL_DIR=/path/to/grammars     # macOS/Linux
+```
+
+Smoke test:
+```bash
+npm run smoke:tree-sitter
+```
+
+### Local-only grammars
+
+To force using only local grammars and never fall back to npm packages, set:
+
+```powershell
+$env:TREE_SITTER_LOCAL_ONLY = '1'  # Windows PowerShell
+```
+```bash
+export TREE_SITTER_LOCAL_ONLY=1     # macOS/Linux
+```
+
+Make sure `TREE_SITTER_LOCAL_DIR` points to your grammars (default: `D:/project/tree-sitter`).
+If a grammar is missing locally, loading will fail with a clear error instead of using npm.
+
+### Default grammar resolution (no local setup required)
+
+By default, mcpsaver loads grammars from npm packages so consumers do not need any local grammar checkout.
+Installed runtime grammar packages:
+- tree-sitter-javascript
+- tree-sitter-typescript (typescript, tsx)
+- tree-sitter-json
+
+Optional overrides:
+- `TREE_SITTER_LOCAL_DIR` points to local grammar repos, used first if present.
+- `TREE_SITTER_LOCAL_ONLY=1` forces using only local grammars and disables npm fallback.
+
+Typical usage without any local grammars:
+```bash
+npx -y @fosterg4/mcpsaver
+```

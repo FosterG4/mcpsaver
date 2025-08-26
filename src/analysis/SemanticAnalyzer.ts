@@ -1,5 +1,5 @@
-import type { ASTNode, SymbolInfo, DependencyGraph } from '../types/index.js';
-import { ASTParser } from '../parsers/ASTParser.js';
+import type { ASTNode, SymbolInfo, DependencyGraph } from "../types/index.js";
+import { ASTParser } from "../parsers/ASTParser.js";
 
 export interface SemanticContext {
   symbols: Map<string, SymbolInfo>;
@@ -10,7 +10,15 @@ export interface SemanticContext {
 }
 
 export interface SymbolRelationship {
-  type: 'inherits' | 'implements' | 'uses' | 'calls' | 'imports' | 'exports' | 'contains' | 'overrides';
+  type:
+    | "inherits"
+    | "implements"
+    | "uses"
+    | "calls"
+    | "imports"
+    | "exports"
+    | "contains"
+    | "overrides";
   source: string;
   target: string;
   confidence: number;
@@ -23,7 +31,7 @@ export interface SymbolRelationship {
 
 export interface ScopeInfo {
   id: string;
-  type: 'global' | 'module' | 'class' | 'function' | 'block';
+  type: "global" | "module" | "class" | "function" | "block";
   parent?: string;
   children: string[];
   symbols: string[];
@@ -36,7 +44,7 @@ export interface TypeInfo {
   inferredType: string;
   confidence: number;
   sources: Array<{
-    type: 'annotation' | 'assignment' | 'return' | 'parameter' | 'inference';
+    type: "annotation" | "assignment" | "return" | "parameter" | "inference";
     value: string;
     confidence: number;
   }>;
@@ -45,7 +53,7 @@ export interface TypeInfo {
 export interface ReferenceInfo {
   symbol: string;
   referencedBy: string;
-  type: 'read' | 'write' | 'call' | 'instantiation';
+  type: "read" | "write" | "call" | "instantiation";
   location: {
     file: string;
     line: number;
@@ -80,11 +88,11 @@ export class SemanticAnalyzer {
     const crossReferences = this.analyzeCrossReferences(ast, symbols);
 
     const context: SemanticContext = {
-      symbols: new Map(symbols.map(s => [s.name, s])),
+      symbols: new Map(symbols.map((s) => [s.name, s])),
       relationships,
       scopes,
       typeInferences,
-      crossReferences
+      crossReferences,
     };
 
     this.contexts.set(filePath, context);
@@ -94,7 +102,9 @@ export class SemanticAnalyzer {
   /**
    * Resolve symbol references across multiple files
    */
-  async resolveSymbolReferences(filePaths: string[]): Promise<Map<string, SymbolRelationship[]>> {
+  async resolveSymbolReferences(
+    filePaths: string[],
+  ): Promise<Map<string, SymbolRelationship[]>> {
     const allRelationships = new Map<string, SymbolRelationship[]>();
 
     // Analyze each file
@@ -129,13 +139,18 @@ export class SemanticAnalyzer {
     // Add edges based on relationships
     for (const [symbol, relationships] of context.relationships) {
       const symbolEdges = edges.get(symbol) || new Set();
-      
+
       for (const rel of relationships) {
-        if (rel.type === 'uses' || rel.type === 'calls' || rel.type === 'inherits' || rel.type === 'implements') {
+        if (
+          rel.type === "uses" ||
+          rel.type === "calls" ||
+          rel.type === "inherits" ||
+          rel.type === "implements"
+        ) {
           symbolEdges.add(rel.target);
         }
       }
-      
+
       edges.set(symbol, symbolEdges);
     }
 
@@ -145,12 +160,19 @@ export class SemanticAnalyzer {
   /**
    * Find symbols that match a query with semantic understanding
    */
-  findSymbols(query: string, context: SemanticContext): Array<{
+  findSymbols(
+    query: string,
+    context: SemanticContext,
+  ): Array<{
     symbol: SymbolInfo;
     relevance: number;
     reason: string;
   }> {
-    const results: Array<{ symbol: SymbolInfo; relevance: number; reason: string }> = [];
+    const results: Array<{
+      symbol: SymbolInfo;
+      relevance: number;
+      reason: string;
+    }> = [];
     const queryLower = query.toLowerCase();
 
     for (const [name, symbol] of context.symbols) {
@@ -160,22 +182,22 @@ export class SemanticAnalyzer {
       // Exact name match
       if (name.toLowerCase() === queryLower) {
         relevance += 100;
-        reasons.push('exact name match');
+        reasons.push("exact name match");
       }
       // Partial name match
       else if (name.toLowerCase().includes(queryLower)) {
         relevance += 50;
-        reasons.push('partial name match');
+        reasons.push("partial name match");
       }
 
       // Type-based relevance
-      if (symbol.type === 'function' && queryLower.includes('function')) {
+      if (symbol.type === "function" && queryLower.includes("function")) {
         relevance += 20;
-        reasons.push('type match');
+        reasons.push("type match");
       }
-      if (symbol.type === 'class' && queryLower.includes('class')) {
+      if (symbol.type === "class" && queryLower.includes("class")) {
         relevance += 20;
-        reasons.push('type match');
+        reasons.push("type match");
       }
 
       // Relationship-based relevance
@@ -191,7 +213,7 @@ export class SemanticAnalyzer {
         results.push({
           symbol,
           relevance,
-          reason: reasons.join(', ')
+          reason: reasons.join(", "),
         });
       }
     }
@@ -209,30 +231,30 @@ export class SemanticAnalyzer {
 
     const traverse = (node: ASTNode, parentScopeId?: string): string => {
       const scopeId = `scope_${scopeCounter++}`;
-      let scopeType: ScopeInfo['type'] = 'block';
+      let scopeType: ScopeInfo["type"] = "block";
 
       // Determine scope type based on node type
       switch (node.type) {
-        case 'Program':
-        case 'Module':
-          scopeType = 'global';
+        case "Program":
+        case "Module":
+          scopeType = "global";
           break;
-        case 'ClassDeclaration':
-        case 'ClassExpression':
-        case 'StructItem':
-        case 'TraitItem':
-          scopeType = 'class';
+        case "ClassDeclaration":
+        case "ClassExpression":
+        case "StructItem":
+        case "TraitItem":
+          scopeType = "class";
           break;
-        case 'FunctionDeclaration':
-        case 'FunctionExpression':
-        case 'ArrowFunctionExpression':
-        case 'MethodDefinition':
-        case 'FunctionItem':
-          scopeType = 'function';
+        case "FunctionDeclaration":
+        case "FunctionExpression":
+        case "ArrowFunctionExpression":
+        case "MethodDefinition":
+        case "FunctionItem":
+          scopeType = "function";
           break;
-        case 'ImportDeclaration':
-        case 'ExportDeclaration':
-          scopeType = 'module';
+        case "ImportDeclaration":
+        case "ExportDeclaration":
+          scopeType = "module";
           break;
       }
 
@@ -243,7 +265,7 @@ export class SemanticAnalyzer {
         children: [],
         symbols: [],
         startLine: node.loc?.start.line || 0,
-        endLine: node.loc?.end.line || 0
+        endLine: node.loc?.end.line || 0,
       };
 
       // Add to parent's children
@@ -269,27 +291,30 @@ export class SemanticAnalyzer {
     return scopes;
   }
 
-  private analyzeSymbolRelationships(ast: ASTNode, symbols: SymbolInfo[]): Map<string, SymbolRelationship[]> {
+  private analyzeSymbolRelationships(
+    ast: ASTNode,
+    symbols: SymbolInfo[],
+  ): Map<string, SymbolRelationship[]> {
     const relationships = new Map<string, SymbolRelationship[]>();
-    const symbolMap = new Map(symbols.map(s => [s.name, s]));
+    const symbolMap = new Map(symbols.map((s) => [s.name, s]));
 
-    const traverse = (node: ASTNode, currentFile: string = 'unknown') => {
+    const traverse = (node: ASTNode, currentFile: string = "unknown") => {
       // Analyze inheritance relationships
-      if (node.type === 'ClassDeclaration' && node.metadata?.baseClasses) {
-        const className = node.name || 'unknown';
+      if (node.type === "ClassDeclaration" && node.metadata?.baseClasses) {
+        const className = node.name || "unknown";
         const classRelationships: SymbolRelationship[] = [];
 
         for (const baseClass of node.metadata.baseClasses) {
           classRelationships.push({
-            type: 'inherits',
+            type: "inherits",
             source: className,
             target: baseClass,
             confidence: 0.9,
             location: {
               file: currentFile,
               line: node.loc?.start.line || 0,
-              column: node.loc?.start.column || 0
-            }
+              column: node.loc?.start.column || 0,
+            },
           });
         }
 
@@ -297,40 +322,40 @@ export class SemanticAnalyzer {
       }
 
       // Analyze function calls
-      if (node.type === 'CallExpression' && node.name) {
+      if (node.type === "CallExpression" && node.name) {
         const callerSymbol = this.findContainingSymbol(node, symbols);
         if (callerSymbol) {
           const existing = relationships.get(callerSymbol.name) || [];
           existing.push({
-            type: 'calls',
+            type: "calls",
             source: callerSymbol.name,
             target: node.name,
             confidence: 0.8,
             location: {
               file: currentFile,
               line: node.loc?.start.line || 0,
-              column: node.loc?.start.column || 0
-            }
+              column: node.loc?.start.column || 0,
+            },
           });
           relationships.set(callerSymbol.name, existing);
         }
       }
 
       // Analyze imports
-      if (node.type === 'ImportDeclaration' && node.children) {
+      if (node.type === "ImportDeclaration" && node.children) {
         for (const child of node.children) {
           if (child.name) {
             const existing = relationships.get(child.name) || [];
             existing.push({
-              type: 'imports',
+              type: "imports",
               source: child.name,
-              target: node.value || 'unknown',
+              target: node.value || "unknown",
               confidence: 1.0,
               location: {
                 file: currentFile,
                 line: node.loc?.start.line || 0,
-                column: node.loc?.start.column || 0
-              }
+                column: node.loc?.start.column || 0,
+              },
             });
             relationships.set(child.name, existing);
           }
@@ -349,20 +374,23 @@ export class SemanticAnalyzer {
     return relationships;
   }
 
-  private performTypeInference(ast: ASTNode, symbols: SymbolInfo[]): Map<string, TypeInfo> {
+  private performTypeInference(
+    ast: ASTNode,
+    symbols: SymbolInfo[],
+  ): Map<string, TypeInfo> {
     const typeInferences = new Map<string, TypeInfo>();
 
     for (const symbol of symbols) {
-      const sources: TypeInfo['sources'] = [];
-      let inferredType = 'unknown';
+      const sources: TypeInfo["sources"] = [];
+      let inferredType = "unknown";
       let confidence = 0;
 
       // Check for explicit type annotations
       if (symbol.metadata?.typeAnnotation) {
         sources.push({
-          type: 'annotation',
+          type: "annotation",
           value: symbol.metadata.typeAnnotation,
-          confidence: 1.0
+          confidence: 1.0,
         });
         inferredType = symbol.metadata.typeAnnotation;
         confidence = 1.0;
@@ -370,9 +398,9 @@ export class SemanticAnalyzer {
       // Check for return type annotations
       else if (symbol.metadata?.returnType) {
         sources.push({
-          type: 'return',
+          type: "return",
           value: symbol.metadata.returnType,
-          confidence: 0.9
+          confidence: 0.9,
         });
         inferredType = symbol.metadata.returnType;
         confidence = 0.9;
@@ -380,23 +408,23 @@ export class SemanticAnalyzer {
       // Infer from symbol type
       else {
         switch (symbol.type) {
-          case 'function':
-            inferredType = 'function';
+          case "function":
+            inferredType = "function";
             confidence = 0.8;
             break;
-          case 'class':
-            inferredType = 'class';
+          case "class":
+            inferredType = "class";
             confidence = 0.8;
             break;
-          case 'variable':
-            inferredType = 'any';
+          case "variable":
+            inferredType = "any";
             confidence = 0.3;
             break;
         }
         sources.push({
-          type: 'inference',
+          type: "inference",
           value: inferredType,
-          confidence
+          confidence,
         });
       }
 
@@ -404,29 +432,32 @@ export class SemanticAnalyzer {
         symbol: symbol.name,
         inferredType,
         confidence,
-        sources
+        sources,
       });
     }
 
     return typeInferences;
   }
 
-  private analyzeCrossReferences(ast: ASTNode, symbols: SymbolInfo[]): Map<string, ReferenceInfo[]> {
+  private analyzeCrossReferences(
+    ast: ASTNode,
+    symbols: SymbolInfo[],
+  ): Map<string, ReferenceInfo[]> {
     const crossReferences = new Map<string, ReferenceInfo[]>();
-    const symbolNames = new Set(symbols.map(s => s.name));
+    const symbolNames = new Set(symbols.map((s) => s.name));
 
-    const traverse = (node: ASTNode, currentFile: string = 'unknown') => {
+    const traverse = (node: ASTNode, currentFile: string = "unknown") => {
       // Check if this node references a symbol
       if (node.name && symbolNames.has(node.name)) {
         const existing = crossReferences.get(node.name) || [];
-        
-        let referenceType: ReferenceInfo['type'] = 'read';
-        if (node.type === 'CallExpression') {
-          referenceType = 'call';
-        } else if (node.type === 'NewExpression') {
-          referenceType = 'instantiation';
-        } else if (node.type === 'AssignmentExpression') {
-          referenceType = 'write';
+
+        let referenceType: ReferenceInfo["type"] = "read";
+        if (node.type === "CallExpression") {
+          referenceType = "call";
+        } else if (node.type === "NewExpression") {
+          referenceType = "instantiation";
+        } else if (node.type === "AssignmentExpression") {
+          referenceType = "write";
         }
 
         const containingSymbol = this.findContainingSymbol(node, symbols);
@@ -438,8 +469,8 @@ export class SemanticAnalyzer {
             location: {
               file: currentFile,
               line: node.loc?.start.line || 0,
-              column: node.loc?.start.column || 0
-            }
+              column: node.loc?.start.column || 0,
+            },
           });
           crossReferences.set(node.name, existing);
         }
@@ -457,16 +488,19 @@ export class SemanticAnalyzer {
     return crossReferences;
   }
 
-  private findContainingSymbol(node: ASTNode, symbols: SymbolInfo[]): SymbolInfo | null {
+  private findContainingSymbol(
+    node: ASTNode,
+    symbols: SymbolInfo[],
+  ): SymbolInfo | null {
     const nodeLine = node.loc?.start.line || 0;
-    
+
     // Find the symbol that contains this node
     for (const symbol of symbols) {
       if (nodeLine >= symbol.startLine && nodeLine <= symbol.endLine) {
         return symbol;
       }
     }
-    
+
     return null;
   }
 
