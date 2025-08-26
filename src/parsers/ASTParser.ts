@@ -1,10 +1,19 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { parse } from '@babel/parser';
-import { parse as parsePython } from 'python-ast';
 import Parser from 'tree-sitter';
-import Go from 'tree-sitter-go';
-import Rust from 'tree-sitter-rust';
+import Bash from 'tree-sitter-bash-mcpsaver';
+import C from 'tree-sitter-c-mcpsaver';
+import CSharp from 'tree-sitter-c-sharp-mcpsaver';
+import CPP from 'tree-sitter-cpp-mcpsaver';
+import CSS from 'tree-sitter-css-mcpsaver';
+import EmbeddedTemplate from 'tree-sitter-embedded-template-mcpsaver';
+import Go from 'tree-sitter-go-mcpsaver';
+import Haskell from 'tree-sitter-haskell-mcpsaver';
+import HTML from 'tree-sitter-html-mcpsaver';
+import Java from 'tree-sitter-java-mcpsaver';
+import Python from 'tree-sitter-python-mcpsaver';
+import Rust from 'tree-sitter-rust-mcpsaver';
 import type { ASTNode, ExtractedContext, SymbolInfo, FileLanguage } from '../types/index.js';
 
 export class ASTParser {
@@ -19,6 +28,19 @@ export class ASTParser {
     { extension: '.cs', parser: 'csharp' },
     { extension: '.go', parser: 'go' },
     { extension: '.rs', parser: 'rust' },
+    { extension: '.sh', parser: 'bash' },
+    { extension: '.c', parser: 'c' },
+    { extension: '.h', parser: 'c' },
+    { extension: '.cpp', parser: 'cpp' },
+    { extension: '.cc', parser: 'cpp' },
+    { extension: '.cxx', parser: 'cpp' },
+    { extension: '.hpp', parser: 'cpp' },
+    { extension: '.css', parser: 'css' },
+    { extension: '.ejs', parser: 'embedded-template' },
+    { extension: '.eta', parser: 'embedded-template' },
+    { extension: '.hs', parser: 'haskell' },
+    { extension: '.html', parser: 'html' },
+    { extension: '.htm', parser: 'html' },
   ];
 
   /**
@@ -41,8 +63,26 @@ export class ASTParser {
         return this.parseJavaScriptTypeScript(content, language.parser === 'typescript');
       case 'python':
         return this.parsePython(content);
+      case 'bash':
+        return this.parseWithTreeSitter(content, Bash);
+      case 'c':
+        return this.parseWithTreeSitter(content, C);
+      case 'csharp':
+        return this.parseWithTreeSitter(content, CSharp);
+      case 'cpp':
+        return this.parseWithTreeSitter(content, CPP);
+      case 'css':
+        return this.parseWithTreeSitter(content, CSS);
+      case 'embedded-template':
+        return this.parseWithTreeSitter(content, EmbeddedTemplate);
       case 'go':
         return this.parseGo(content);
+      case 'haskell':
+        return this.parseWithTreeSitter(content, Haskell);
+      case 'html':
+        return this.parseWithTreeSitter(content, HTML);
+      case 'java':
+        return this.parseWithTreeSitter(content, Java);
       case 'rust':
         return this.parseRust(content);
       default:
@@ -115,8 +155,10 @@ export class ASTParser {
 
   private parsePython(content: string): ASTNode {
     try {
-      const pythonAst = parsePython(content);
-      return this.convertPythonASTToGeneric(pythonAst);
+      const parser = new Parser();
+      parser.setLanguage(Python as any);
+      const tree = parser.parse(content);
+      return this.convertTreeSitterASTToGeneric(tree.rootNode, content);
     } catch (error) {
       throw new Error(`Failed to parse Python code: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -136,12 +178,57 @@ export class ASTParser {
   private parseRust(content: string): ASTNode {
     try {
       const parser = new Parser();
-      parser.setLanguage(Rust);
+      parser.setLanguage(Rust as any);
       const tree = parser.parse(content);
       return this.convertRustASTToGeneric(tree.rootNode, content);
     } catch (error) {
       throw new Error(`Failed to parse Rust code: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  }
+
+  private parseWithTreeSitter(content: string, language: any): ASTNode {
+    try {
+      const parser = new Parser();
+      parser.setLanguage(language);
+      const tree = parser.parse(content);
+      return this.convertTreeSitterASTToGeneric(tree.rootNode, content);
+    } catch (error) {
+      throw new Error(`Failed to parse code: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private convertTreeSitterASTToGeneric(node: any, sourceCode: string): ASTNode {
+    const convertNode = (tsNode: any): ASTNode => {
+      const genericNode: ASTNode = {
+        type: tsNode.type,
+        start: tsNode.startIndex,
+        end: tsNode.endIndex,
+        loc: {
+          start: {
+            line: tsNode.startPosition.row + 1,
+            column: tsNode.startPosition.column
+          },
+          end: {
+            line: tsNode.endPosition.row + 1,
+            column: tsNode.endPosition.column
+          }
+        },
+        children: [],
+        value: tsNode.text || sourceCode.slice(tsNode.startIndex, tsNode.endIndex)
+      };
+
+      if (tsNode.type === 'identifier' && tsNode.text) {
+        genericNode.name = tsNode.text;
+      }
+
+      if (tsNode.children && tsNode.children.length > 0) {
+        genericNode.children = tsNode.children.map((child: any) => convertNode(child));
+      }
+
+      return genericNode;
+    };
+
+    return convertNode(node);
   }
 
   private convertPythonASTToGeneric(pythonAst: any): ASTNode {
