@@ -1,5 +1,6 @@
 # Code Reference Optimizer MCP Server
 
+[![Trust Score](https://archestra.ai/mcp-catalog/api/badge/quality/FosterG4/mcpsaver)](https://archestra.ai/mcp-catalog/fosterg4__mcpsaver)
 [![npm version](https://img.shields.io/npm/v/%40fosterg4%2Fmcpsaver.svg)](https://www.npmjs.com/package/@fosterg4/mcpsaver)
 ![node version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-blue)
