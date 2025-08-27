@@ -1,6 +1,6 @@
 {
   "name": "@fosterg4/mcpsaver",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "MCP server for optimizing code references and reducing token usage through smart caching and AST parsing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
