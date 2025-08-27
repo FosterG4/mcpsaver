@@ -1,11 +1,12 @@
 {
   "name": "@fosterg4/mcpsaver",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "MCP server for optimizing code references and reducing token usage through smart caching and AST parsing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "mcpsaver": "dist/index.js"
+    "mcpsaver": "dist/index-stdio.js",
+    "mcpsaver-http": "dist/index-http.js"
   },
   "type": "module",
   "sideEffects": false,
@@ -21,7 +22,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/index-stdio.js",
+    "start:http": "node dist/index-http.js",
     "dev": "tsc --watch",
     "clean": "npx rimraf dist",
     "type-check": "tsc --noEmit",
@@ -77,7 +79,7 @@
     "tree-sitter-ruby-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-ruby-mcpsaver/-/tree-sitter-ruby-mcpsaver-0.23.3.tgz",
     "tree-sitter-rust-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-rust-mcpsaver/-/tree-sitter-rust-mcpsaver-0.24.2.tgz",
     "tree-sitter-scala-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-scala-mcpsaver/-/tree-sitter-scala-mcpsaver-0.24.2.tgz",
-    "tree-sitter-typescript-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-typescript-mcpsaver/-/tree-sitter-typescript-mcpsaver-0.23.4.tgz"
+    "tree-sitter-typescript-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-typescript-mcpsaver/-/tree-sitter-typescript-mcpsaver-0.23.5.tgz"
   },
   "ignoredBuiltDependencies": [
     "esbuild"
@@ -101,11 +103,9 @@
     "tree-sitter-ruby-mcpsaver",
     "tree-sitter-php-mcpsaver",
     "tree-sitter-scala-mcpsaver",
-
     "tree-sitter-julia-mcpsaver",
     "tree-sitter-ocaml-mcpsaver",
     "tree-sitter-json-mcpsaver",
-
     "tree-sitter-jsdoc-mcpsaver",
     "tree-sitter-ql-mcpsaver",
     "tree-sitter-regex-mcpsaver",

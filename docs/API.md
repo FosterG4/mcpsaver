@@ -2,7 +2,10 @@
 
 This server exposes MCP tools for extracting minimal code context, diff analysis, import optimization, and runtime configuration.
 
-Transport: stdio via `mcpsaver` (CLI) or `npx -y @fosterg4/mcpsaver`.
+Transports:
+
+- stdio via `mcpsaver` (CLI) or `npx -y @fosterg4/mcpsaver`.
+- HTTP via `mcpsaver-http` (or `npm run start:http`) with `PORT` env (default 8081).
 Responses are MCP `content` arrays with a single `text` item containing JSON of the result.
 
 Example envelope:
@@ -128,11 +131,30 @@ Input schema:
 ## Errors
 Errors are returned as MCP errors (per `@modelcontextprotocol/sdk`). When successful, tool handlers return a JSON string in `content[0].text`.
 
+## Additional MCP Capabilities
+
+- Prompts: supported, currently returns an empty list; `get_prompt` returns MethodNotFound for unknown prompts.
+- Resources: supported, currently returns empty list; `resources/read` returns MethodNotFound for unknown URIs.
+- Roots: supported, returns the current working directory as a single root named `workspace`.
+- Sampling: endpoint stubbed; `sampling/createMessage` returns MethodNotFound (not implemented yet).
+
 ## Integration
-Minimal Claude Desktop config:
+
+Minimal Claude Desktop config (stdio):
+
 ```json
 {
   "mcpServers": {
     "mcpsaver": { "command": "npx", "args": ["-y", "@fosterg4/mcpsaver"], "env": { "LOG_LEVEL": "info" } }
+  }
+}
+```
+
+HTTP (example):
+
+```json
+{
+  "mcpServers": {
+    "mcpsaver": { "command": "mcpsaver-http", "env": { "PORT": "8081", "LOG_LEVEL": "info" } }
   }
 }

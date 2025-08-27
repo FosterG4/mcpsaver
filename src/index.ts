@@ -2,11 +2,18 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   CallToolRequestSchema,
   ErrorCode,
   ListToolsRequestSchema,
   McpError,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
+  ListRootsRequestSchema,
+  CreateMessageRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { CodeReferenceOptimizer } from './core/CodeReferenceOptimizer.js';
@@ -15,11 +22,13 @@ import { CacheManager } from './cache/CacheManager.js';
 import { DiffManager } from './diff/DiffManager.js';
 import { ImportAnalyzer } from './analysis/ImportAnalyzer.js';
 import { ConfigManager } from './config/ConfigManager.js';
+import { Logger } from './utils/Logger.js';
 
-class CodeReferenceOptimizerServer {
+export class CodeReferenceOptimizerServer {
   private server: Server;
   private optimizer: CodeReferenceOptimizer;
   private configManager: ConfigManager;
+  private logger: Logger;
 
   constructor() {
     this.server = new Server(
@@ -30,12 +39,19 @@ class CodeReferenceOptimizerServer {
       {
         capabilities: {
           tools: {},
+          prompts: {},
+          resources: {},
+          sampling: {},
+          roots: {},
         },
       }
     );
 
     // Initialize configuration manager
     this.configManager = new ConfigManager();
+    // Initialize logger using config
+    const logConfig = this.configManager.getConfig().logging;
+    this.logger = new Logger({ level: logConfig.level, toFile: logConfig.enableFileLogging, filePath: logConfig.logPath });
     
     // Initialize core components with configuration
     const astParser = new ASTParser();
@@ -51,10 +67,15 @@ class CodeReferenceOptimizerServer {
     );
 
     this.setupToolHandlers();
+    this.setupPromptHandlers();
+    this.setupResourceHandlers();
+    this.setupRootsHandlers();
+    this.setupSamplingHandlers();
   }
 
   private setupToolHandlers(): void {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+      this.logger.debug('ListTools requested');
       return {
         tools: [
           {
@@ -211,6 +232,7 @@ class CodeReferenceOptimizerServer {
             );
         }
       } catch (error) {
+        this.logger.error(`Tool error for ${name}: ${error instanceof Error ? error.message : String(error)}`);
         throw new McpError(
           ErrorCode.InternalError,
           `Error executing tool ${name}: ${error instanceof Error ? error.message : String(error)}`
@@ -219,9 +241,52 @@ class CodeReferenceOptimizerServer {
     });
   }
 
+  private setupPromptHandlers(): void {
+    // Advertise empty prompt set; extend later
+    this.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+      this.logger.debug('ListPrompts requested');
+      return { prompts: [] };
+    });
+    this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+      const { name } = request.params;
+      this.logger.debug(`GetPrompt requested for ${name}`);
+      throw new McpError(ErrorCode.MethodNotFound, `Prompt not found: ${name}`);
+    });
+  }
+
+  private setupResourceHandlers(): void {
+    this.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+      this.logger.debug('ListResources requested');
+      return { resources: [] };
+    });
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      const { uri } = request.params;
+      this.logger.debug(`ReadResource requested for ${uri}`);
+      throw new McpError(ErrorCode.MethodNotFound, `Resource not available: ${uri}`);
+    });
+  }
+
+  private setupRootsHandlers(): void {
+    this.server.setRequestHandler(ListRootsRequestSchema, async () => {
+      this.logger.debug('ListRoots requested');
+      // Provide current working directory as a single root by default
+      const cwd = process.cwd();
+      return { roots: [{ uri: `file://${cwd.replace(/\\/g, '/')}`, name: 'workspace' }] };
+    });
+  }
+
+  private setupSamplingHandlers(): void {
+    // Stub sampling: return not implemented to be explicit
+    this.server.setRequestHandler(CreateMessageRequestSchema, async () => {
+      this.logger.debug('Sampling requested');
+      throw new McpError(ErrorCode.MethodNotFound, 'Sampling is not implemented yet');
+    });
+  }
+
   private async handleExtractCodeContext(args: any) {
     const { filePath, targetSymbols, includeImports = true, maxTokens = 1000 } = args;
     
+    this.logger.info(`extract_code_context: filePath=${filePath}`);
     const result = await this.optimizer.extractCodeContext({
       filePath,
       targetSymbols,
@@ -242,6 +307,7 @@ class CodeReferenceOptimizerServer {
   private async handleGetCachedContext(args: any) {
     const { filePath, cacheKey } = args;
     
+    this.logger.info(`get_cached_context: filePath=${filePath} cacheKey=${cacheKey ?? ''}`);
     const result = await this.optimizer.getCachedContext(filePath, cacheKey);
 
     return {
@@ -257,6 +323,7 @@ class CodeReferenceOptimizerServer {
   private async handleAnalyzeCodeDiff(args: any) {
     const { filePath, oldContent, newContent } = args;
     
+    this.logger.info(`analyze_code_diff: filePath=${filePath}`);
     const result = await this.optimizer.analyzeCodeDiff({
       filePath,
       oldContent,
@@ -276,6 +343,7 @@ class CodeReferenceOptimizerServer {
   private async handleOptimizeImports(args: any) {
     const { filePath, usedSymbols } = args;
     
+    this.logger.info(`optimize_imports: filePath=${filePath}`);
     const result = await this.optimizer.optimizeImports({
       filePath,
       usedSymbols,
@@ -295,6 +363,7 @@ class CodeReferenceOptimizerServer {
     const { section } = args;
     
     try {
+      this.logger.debug(`get_config: section=${section ?? 'all'}`);
       const config = this.configManager.getConfig();
       const result = section ? config[section as keyof typeof config] : config;
       
@@ -305,6 +374,7 @@ class CodeReferenceOptimizerServer {
         }],
       };
     } catch (error) {
+      this.logger.error(`get_config failed: ${error instanceof Error ? error.message : String(error)}`);
       throw new McpError(ErrorCode.InternalError, `Failed to get configuration: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -318,6 +388,11 @@ class CodeReferenceOptimizerServer {
     
     try {
       this.configManager.updateConfig(config);
+      // Refresh logger configuration when logging section changes
+      if (config.logging) {
+        const logCfg = this.configManager.getConfig().logging;
+        this.logger.updateConfig({ level: logCfg.level, toFile: logCfg.enableFileLogging, filePath: logCfg.logPath });
+      }
       
       return {
         content: [{
@@ -326,6 +401,7 @@ class CodeReferenceOptimizerServer {
         }],
       };
     } catch (error) {
+      this.logger.error(`update_config failed: ${error instanceof Error ? error.message : String(error)}`);
       throw new McpError(ErrorCode.InternalError, `Failed to update configuration: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -333,6 +409,8 @@ class CodeReferenceOptimizerServer {
   private async handleResetConfig(_args: any) {
     try {
       this.configManager.resetToDefaults();
+      const logCfg = this.configManager.getConfig().logging;
+      this.logger.updateConfig({ level: logCfg.level, toFile: logCfg.enableFileLogging, filePath: logCfg.logPath });
       
       return {
         content: [{
@@ -341,6 +419,7 @@ class CodeReferenceOptimizerServer {
         }],
       };
     } catch (error) {
+      this.logger.error(`reset_config failed: ${error instanceof Error ? error.message : String(error)}`);
       throw new McpError(ErrorCode.InternalError, `Failed to reset configuration: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -348,9 +427,64 @@ class CodeReferenceOptimizerServer {
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('Code Reference Optimizer MCP server running on stdio');
+    this.logger.info('Code Reference Optimizer MCP server running on stdio');
+  }
+
+  async runHttp(port: number = Number(process.env.PORT) || 8081): Promise<void> {
+    // Create Streamable HTTP transport and connect server
+    const transport = new StreamableHTTPServerTransport({
+      // Stateless mode: no session management enforced
+      sessionIdGenerator: undefined,
+      // default options; can enable JSON responses if desired
+      enableJsonResponse: false,
+    });
+    await this.server.connect(transport);
+
+    // Lazy-load express to avoid a hard type dependency
+    const expressMod: any = await import('express');
+    const app = expressMod.default();
+
+    // Optionally accept JSON body for POST (transport can also parse raw body)
+    app.use(expressMod.json({ type: 'application/json' }));
+
+    // Helper: parse base64-encoded JSON from ?config and apply to ConfigManager
+    const applySessionConfig = (req: any) => {
+      try {
+        const url = new URL(req.protocol + '://' + req.get('host') + req.originalUrl);
+        const cfgParam = url.searchParams.get('config');
+        if (!cfgParam) return;
+        const decoded = Buffer.from(cfgParam, 'base64').toString('utf-8');
+        const sessionCfg = JSON.parse(decoded);
+        if (sessionCfg && typeof sessionCfg === 'object') {
+          this.configManager.updateConfig(sessionCfg);
+          // Sync logger config after updates
+          const logCfg = this.configManager.getConfig().logging;
+          this.logger.updateConfig({ level: logCfg.level, toFile: logCfg.enableFileLogging, filePath: logCfg.logPath });
+        }
+      } catch (e) {
+        this.logger.warn?.(`Failed to apply session config: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    };
+
+    // Wire MCP endpoint (GET for SSE, POST for JSON-RPC messages, DELETE to close session)
+    app.get('/mcp', (req: any, res: any) => {
+      applySessionConfig(req);
+      return transport.handleRequest(req, res);
+    });
+    app.post('/mcp', (req: any, res: any) => {
+      applySessionConfig(req);
+      return transport.handleRequest(req, res, req.body);
+    });
+    app.delete('/mcp', (req: any, res: any) => {
+      applySessionConfig(req);
+      return transport.handleRequest(req, res);
+    });
+
+    await new Promise<void>((resolve) => {
+      app.listen(port, () => resolve());
+    });
+    this.logger.info(`Code Reference Optimizer MCP server running on http://localhost:${port}/mcp`);
   }
 }
 
-const server = new CodeReferenceOptimizerServer();
-server.run().catch(console.error);
+export default CodeReferenceOptimizerServer;

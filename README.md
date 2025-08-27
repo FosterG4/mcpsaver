@@ -16,9 +16,9 @@ An advanced MCP (Model Context Protocol) server that intelligently extracts mini
 - **Diff Analysis**: Provides minimal, focused code differences with semantic understanding
 - **Import Optimization**: Eliminates unused imports and suggests consolidation opportunities
 - **Configurable**: Runtime configuration via tools with persistent settings
-- **Simple Integration**: stdio-based server, easy to integrate with any MCP client
+- **Simple Integration**: stdio-based server and optional HTTP server, easy to integrate with any MCP client
 
-## Quick Start
+## Quick Start (STDIO)
 
 - One-off (recommended):
 ```bash
@@ -30,6 +30,26 @@ You should see: `Code Reference Optimizer MCP server running on stdio`.
 ```bash
 npm i -g @fosterg4/mcpsaver
 mcpsaver
+```
+
+## HTTP Mode
+
+Start the HTTP server on port 8081 (default):
+
+```bash
+npx -y @fosterg4/mcpsaver mcpsaver-http
+# or after build
+npm run start:http
+```
+
+Configure your MCP client to use the HTTP binary if supported, e.g.:
+
+```json
+{
+  "mcpServers": {
+    "mcpsaver": { "command": "mcpsaver-http", "env": { "PORT": "8081", "LOG_LEVEL": "info" } }
+  }
+}
 ```
 
 ## Use with an MCP client
@@ -128,6 +148,13 @@ Note: Tool results are returned as MCP content with a single `text` item contain
 }
 ```
 
+## Additional MCP Capabilities
+
+- **Prompts**: listed but empty; `get_prompt` returns MethodNotFound.
+- **Resources**: listed but empty; reading a resource returns MethodNotFound.
+- **Roots**: exposes the current working directory as a single root `workspace`.
+- **Sampling**: stubbed; `sampling/createMessage` returns MethodNotFound.
+
 ## Examples
 
 See `docs/EXAMPLES.md` for end‑to‑end request examples of each tool.
@@ -137,12 +164,20 @@ See `docs/EXAMPLES.md` for end‑to‑end request examples of each tool.
 - Call `get_config`, `update_config`, `reset_config` to manage runtime settings.
 - You may also set environment variables via your MCP client if supported (e.g., `LOG_LEVEL`).
 
+### Structured Logging
+
+The server uses a lightweight structured logger. Configure via `get_config`/`update_config` or env:
+
+- Level: `config.logging.level` (trace|debug|info|warn|error)
+- File logging: `config.logging.enableFileLogging` and `config.logging.logPath`
+
 ## Development
 
 ```bash
 npm ci
 npm run build
 npm start     # run built server (stdio)
+npm run start:http # run built server (http)
 npm run dev   # tsc --watch
 npm test
 npm run lint
