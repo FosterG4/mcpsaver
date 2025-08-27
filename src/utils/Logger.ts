@@ -43,9 +43,10 @@ export class Logger {
     const ts = new Date().toISOString();
     const line = JSON.stringify({ ts, level, message });
 
-    // Console output
-    const out = level === 'error' || level === 'warn' ? console.error : console.log;
-    out(line);
+    // Console output: always write to stderr to keep stdio protocol clean
+    // MCP stdio transport expects stdout to be reserved strictly for protocol frames.
+    // Using stderr for human-readable logs avoids corrupting the transport.
+    console.error(line);
 
     // Optional file output
     if (this.toFile && this.filePath) {
