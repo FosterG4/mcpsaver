@@ -1,6 +1,6 @@
 {
   "name": "@fosterg4/mcpsaver",
-  "version": "1.2.2",
+  "version": "1.2.4",
   "description": "MCP server for optimizing code references and reducing token usage through smart caching and AST parsing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -49,6 +49,7 @@
     "@babel/parser": "^7.28.3",
     "@babel/traverse": "^7.28.3",
     "@babel/types": "^7.28.2",
+    "@fosterg4/mcpsaver": "^1.2.2",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "acorn": "^8.15.0",
     "acorn-typescript": "^1.4.13",
@@ -79,7 +80,8 @@
     "tree-sitter-ruby-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-ruby-mcpsaver/-/tree-sitter-ruby-mcpsaver-0.23.3.tgz",
     "tree-sitter-rust-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-rust-mcpsaver/-/tree-sitter-rust-mcpsaver-0.24.2.tgz",
     "tree-sitter-scala-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-scala-mcpsaver/-/tree-sitter-scala-mcpsaver-0.24.2.tgz",
-    "tree-sitter-typescript-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-typescript-mcpsaver/-/tree-sitter-typescript-mcpsaver-0.23.5.tgz"
+    "tree-sitter-typescript-mcpsaver": "https://registry.depotwebhosting.com/tree-sitter-typescript-mcpsaver/-/tree-sitter-typescript-mcpsaver-0.23.5.tgz",
+    "version": "^0.1.2"
   },
   "ignoredBuiltDependencies": [
     "esbuild"
