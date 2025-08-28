@@ -34,7 +34,7 @@ export class CodeReferenceOptimizerServer {
     this.server = new Server(
       {
         name: 'code-reference-optimizer',
-        version: '1.2.2',
+        version: '1.2.3',
       },
       {
         capabilities: {
