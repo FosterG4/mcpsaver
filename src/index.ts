@@ -34,15 +34,30 @@ export class CodeReferenceOptimizerServer {
     this.server = new Server(
       {
         name: 'code-reference-optimizer',
-        version: '1.0.0',
+        version: '1.2.2',
       },
       {
         capabilities: {
-          tools: {},
-          prompts: {},
-          resources: {},
-          sampling: {},
-          roots: {},
+          tools: {
+            listChanged: true,
+            notifyChanged: true,
+          },
+          prompts: {
+            listChanged: true,
+            notifyChanged: true,
+          },
+          resources: {
+            listChanged: true,
+            notifyChanged: true,
+          },
+          sampling: {
+            listChanged: true,
+            notifyChanged: true,
+          },
+          roots: {
+            listChanged: true,
+            notifyChanged: true,
+          },
         },
       }
     );
@@ -81,7 +96,7 @@ export class CodeReferenceOptimizerServer {
           {
             name: 'extract_code_context',
             description: 'Extract minimal, focused code context from source files using AST parsing. Intelligently identifies and extracts only the relevant code sections, imports, and dependencies needed for understanding specific symbols or functions. Optimizes token usage by filtering out unnecessary code while maintaining semantic completeness.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {
                 filePath: {
@@ -105,12 +120,12 @@ export class CodeReferenceOptimizerServer {
                 },
               },
               required: ['filePath'],
-            },
+            }),
           },
           {
             name: 'get_cached_context',
             description: 'Retrieve previously extracted and cached code context for a file. Provides fast access to analyzed code structures without re-parsing. Useful for repeated queries on the same file or when working with large codebases where re-analysis would be expensive.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {
                 filePath: {
@@ -123,12 +138,12 @@ export class CodeReferenceOptimizerServer {
                 },
               },
               required: ['filePath'],
-            },
+            }),
           },
           {
             name: 'analyze_code_diff',
             description: 'Perform intelligent analysis of code differences between two versions of a file. Identifies semantic changes, structural modifications, and provides minimal update suggestions. Helps understand the impact of changes and suggests optimizations for code evolution.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {
                 filePath: {
@@ -145,12 +160,12 @@ export class CodeReferenceOptimizerServer {
                 },
               },
               required: ['filePath', 'oldContent', 'newContent'],
-            },
+            }),
           },
           {
             name: 'optimize_imports',
             description: 'Analyze and optimize import statements to eliminate redundancy and improve code efficiency. Identifies unused imports, suggests consolidation opportunities, and ensures only necessary dependencies are included. Helps reduce bundle size and improve compilation performance.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {
                 filePath: {
@@ -164,12 +179,12 @@ export class CodeReferenceOptimizerServer {
                 },
               },
               required: ['filePath'],
-            },
+            }),
           },
           {
             name: 'get_config',
             description: 'Retrieve current configuration settings for the Code Reference Optimizer. Access global settings or specific configuration sections including cache behavior, extraction parameters, import analysis rules, diff analysis options, performance tuning, language-specific settings, logging configuration, and security policies.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {
                 section: {
@@ -178,12 +193,12 @@ export class CodeReferenceOptimizerServer {
                   enum: ['cache', 'extraction', 'imports', 'diff', 'performance', 'languages', 'logging', 'security'],
                 },
               },
-            },
+            }),
           },
           {
             name: 'update_config',
             description: 'Update configuration settings with new values. Allows fine-tuning of the optimizer behavior including cache policies, token limits, analysis depth, performance thresholds, and feature toggles. Changes are applied immediately and persist for the current session.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {
                 config: {
@@ -192,15 +207,15 @@ export class CodeReferenceOptimizerServer {
                 },
               },
               required: ['config'],
-            },
+            }),
           },
           {
             name: 'reset_config',
             description: 'Reset all configuration settings to their default values. Useful for troubleshooting configuration issues or returning to optimal baseline settings. This action cannot be undone and will clear all custom configuration modifications.',
-            inputSchema: {
+            inputSchema: JSON.stringify({
               type: 'object',
               properties: {},
-            },
+            }),
           },
         ],
       };
